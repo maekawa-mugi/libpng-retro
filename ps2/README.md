@@ -91,3 +91,24 @@ cc -std=c99 -O2 -Wall -Wextra -Werror ps2/test_mmi_models.c -o test_mmi_models
 
 Run `test_filter_mmi.c` under an EE toolchain and on PS2 hardware to
 exercise the actual MMI assembly and its timing.
+
+
+## Build the EE filter harness with PS2SDK
+
+From the repository root, with PS2SDK configured in your environment:
+
+```sh
+make -C ps2
+```
+
+This produces `ps2/test_filter_mmi.elf`. Execute the ELF on
+PS2 hardware or an EE-compatible emulator. To test the experimental
+128-bit Sub4 scan, rebuild the harness with:
+
+```sh
+make -C ps2 clean
+make -C ps2 EE_OPTFLAGS="-O2 -DPNG_PS2_EE_MMI_SUB4_PREFIX"
+```
+
+The regular build covers Up, Sub4 and Average4; rebuilding with this
+flag also exercises QFSRV and the SA register save/restore sequence.
