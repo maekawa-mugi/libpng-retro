@@ -34,6 +34,7 @@ build_variant all-in-one PNG_PS2_BENCH_ENABLE \
     PNG_PS2_EE_MMI_SUB3_PREFIX PNG_PS2_EE_MMI_GRAY_PREFIX16 \
     PNG_PS2_EE_MMI_SUB4_PREFIX PNG_PS2_EE_MMI_SUB6_PREFIX16 \
     PNG_PS2_EE_MMI_SUB8_PREFIX16 PNG_PS2_EE_MMI_SUB8_WORDS \
+    PNG_PS2_EE_MMI_UP_2X PNG_PS2_EE_MMI_SUB4_UNROLL4 \
     PNG_PS2_EE_MMI_AVG4_DUAL PNG_PS2_EE_MMI_GRAY_AVG \
     PNG_PS2_EE_MMI_WIDE_AVG PNG_PS2_EE_MMI_PAETH \
     PNG_PS2_EE_MMI_PAETH_MASK
@@ -73,6 +74,9 @@ if [ "$mode" = all ] || [ "$mode" = matrix ]; then
     build_variant sub8-words PNG_PS2_EE_MMI_SUB8_WORDS
     build_variant paeth-mask PNG_PS2_EE_MMI_PAETH PNG_PS2_EE_MMI_PAETH_MASK
     build_variant avg4-dual PNG_PS2_EE_MMI_AVG4_DUAL
+    build_variant up-2x PNG_PS2_EE_MMI_UP_2X
+    build_variant sub4-unroll4 PNG_PS2_EE_MMI_SUB4_UNROLL4
+    build_variant both-unrolled PNG_PS2_EE_MMI_UP_2X PNG_PS2_EE_MMI_SUB4_UNROLL4
     build_variant combined-small PNG_PS2_EE_MMI_SUB8_WORDS \
         PNG_PS2_EE_MMI_PAETH PNG_PS2_EE_MMI_PAETH_MASK \
         PNG_PS2_EE_MMI_AVG4_DUAL
