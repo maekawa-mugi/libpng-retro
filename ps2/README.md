@@ -167,23 +167,45 @@ runs both the original and 16-byte grayscale variants, just as it does
 for the RGB8 Sub3 candidate. Neither host execution nor syntax checks
 verify the assembly or its performance on R5900.
 
+## RGBA16 Sub8: three implementations to compare
+
+Sub8 handles RGBA16, where each pixel consists of eight encoded bytes.
+The default kernel still uses four-byte packed additions, splitting each
+pixel into two halves. Two new variants can be selected independently:
+
+- `PNG_PS2_EE_MMI_SUB8_WORDS`: for word-aligned rows with a complete
+  number of eight-byte pixels and at least 32 bytes, load two 32-bit words
+  per pixel directly and process two independent PADDB chains. All other
+  rows use the unchanged packed fallback.
+- `PNG_PS2_EE_MMI_SUB8_PREFIX16`: for rows of at least 64 bytes, align
+  the current position, load a 16-byte raw vector, inject the previous
+  decoded eight bytes, and perform one QFSRV(8) + PADDB prefix step.
+  It saves/restores SA and finishes partial vector tails bytewise.
+  No unaligned LQ, SQ, or LD is executed.
+
+If both options are enabled, PREFIX16 is attempted first. WORDS handles
+rows for which PREFIX16 declines, with the packed C/MMI implementation
+as the final fallback. This is intentional for multi-variant testing.
+
+The host regression suite now compiles the same production Sub8 source
+under **three binaries** (packed, WORDS, PREFIX16), each checked with
+the existing independent scalar Sub/Average/Paeth references and
+post-row canaries. The prefix and word paths are experimental; a
+source-level regression is not a real R5900 correctness or speed result.
+
 ## Multi-variant EE correctness matrix
 
-Build nine separate EE harness ELFs to exercise the three experimental
-Sub1/2, Sub3 and Sub4 prefix switches individually and in all eight
-on/off combinations, plus a ninth stress build enabling all other
-optional Average and Paeth filters:
+Build **18 separate EE harness ELFs** with
+`sh ps2/build_filter_variants.sh`: all sixteen combinations of
+four prefix switches (Sub1/2, Sub3, Sub4 and Sub8), the separate
+Sub8 two-word candidate, and the stress combination enabling all
+prefixes, WORDS, Average and Paeth.
 
-```sh
-sh ps2/build_filter_variants.sh
-```
-
-The files appear in `ps2/variant-elfs/`. Each ELF must be run on EE
-hardware or PCSX2; compare the PASS count of each variant and retain
-all failed test cases. Do not choose a faster implementation solely
-from the mathematical model: benchmark cycles per decoded byte and
-whole-image decode time separately. An opt-in candidate becomes the
-production default only after correctness and a measurable gain on EE.
+The output `ps2/variant-elfs/` must be executed on real EE hardware or
+PCSX2, recording each variant's PASS count. Benchmark each filter
+individually in cycles/byte and compare whole-PNG decoding times.
+The 18 ELFs provide a correctness matrix, **not** a performance
+measurement: do not rank variants by host model throughput.
 
 On the host, `make -f ps2/Makefile.host test` runs the original and
 both portable-prefix sources for RGB8 and grayscale through the same
