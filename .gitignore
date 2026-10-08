@@ -169,3 +169,8 @@ pngprefix.h
 /pngunknown
 /pngvalid
 /timepng
+
+# Standalone PS2 harness artifacts
+/build-ps2-mmi/
+/ps2/*.o
+/ps2/*.elf

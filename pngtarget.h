@@ -82,6 +82,7 @@
 #     include "arm/check.h"
 #     include "intel/check.h"
 #     include "mips/check.h"
+#     include "ps2/check.h"
 #     include "powerpc/check.h"
 #endif
 #endif /* PNG_TARGET_SPECIFIC_CODE_SUPPORTED */

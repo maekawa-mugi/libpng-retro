@@ -1,0 +1,47 @@
+# Standalone host regression tests.  This does not run any R5900 assembly.
+CC ?= cc
+CFLAGS ?= -O2 -std=c99 -Wall -Wextra -Werror
+
+.PHONY: all test clean
+all: test
+
+ps2/test_rgb3_host: ps2/test_rgb3_host.c ps2/filter_rgb3.c
+	$(CC) $(CFLAGS) ps2/test_rgb3_host.c -o $@
+
+ps2/test_up_host: ps2/test_up_host.c ps2/filter_up_mmi.c
+	$(CC) $(CFLAGS) ps2/test_up_host.c -o $@
+
+ps2/test_wide_host: ps2/test_wide_host.c ps2/filter_wide_mmi.c
+	$(CC) $(CFLAGS) ps2/test_wide_host.c -o $@
+
+ps2/test_gray_host: ps2/test_gray_host.c ps2/filter_gray_mmi.c
+	$(CC) $(CFLAGS) ps2/test_gray_host.c -o $@
+
+ps2/test_paeth_host: ps2/test_paeth_host.c ps2/filter_paeth_mmi.c
+	$(CC) $(CFLAGS) ps2/test_paeth_host.c -o $@
+
+ps2/test_mmi_models: ps2/test_mmi_models.c
+	$(CC) $(CFLAGS) ps2/test_mmi_models.c -o $@
+
+# Portable-mode syntax checks run with both GCC and Clang on the host.
+# This is not a cross-assembly check; it catches C API / feature-flag errors.
+.PHONY: syntax syntax-ee-gcc
+syntax:
+	$(CC) $(CFLAGS) -Wno-unused-function -DPNG_PS2_SYNTAX_PORTABLE -fsyntax-only ps2/test_ee_syntax.c
+	$(CC) $(CFLAGS) -Wno-unused-function -DPNG_PS2_SYNTAX_PORTABLE -DPNG_PS2_SYNTAX_DEFAULT -fsyntax-only ps2/test_ee_syntax.c
+
+# GCC parses the inline assembly constraints but still does NOT assemble it.
+syntax-ee-gcc:
+	gcc $(CFLAGS) -Wno-unused-function -fsyntax-only ps2/test_ee_syntax.c
+	gcc $(CFLAGS) -Wno-unused-function -DPNG_PS2_SYNTAX_DEFAULT -fsyntax-only ps2/test_ee_syntax.c
+
+test: ps2/test_up_host ps2/test_gray_host ps2/test_rgb3_host ps2/test_wide_host ps2/test_paeth_host ps2/test_mmi_models syntax
+	./ps2/test_up_host
+	./ps2/test_gray_host
+	./ps2/test_rgb3_host
+	./ps2/test_wide_host
+	./ps2/test_paeth_host
+	./ps2/test_mmi_models
+
+clean:
+	$(RM) ps2/test_wide_host ps2/test_up_host ps2/test_gray_host ps2/test_rgb3_host ps2/test_paeth_host ps2/test_mmi_models
