@@ -10,6 +10,10 @@
  * Released under the libpng license.
  */
 
+#ifdef PNG_PS2_RGB3_PORTABLE_ADD
+#include <string.h>
+#endif
+
 static int
 png_read_filter_row_sub3_prefix_ps2(png_byte *row, size_t rowbytes)
 {
