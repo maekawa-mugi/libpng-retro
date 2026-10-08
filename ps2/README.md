@@ -60,6 +60,98 @@ Adam7 passes.  The default Sub4 loop is horizontal and intentionally
 uses only the low four byte lanes of PADDB; an optimized full-width
 prefix-sum implementation could replace it after profiling.
 
+## One-trip EE correctness and benchmark lab (recommended)
+
+The preferred workflow is to **run one all-option ELF**, collect its
+console output once and analyze it on the development machine. The new
+`ps2/bench_filter_mmi.c` runs *after* the existing exhaustive
+correctness harness, validates each benchmark row against an independent
+scalar reference, then reports machine-readable `BENCH,` CSV lines.
+
+**Before going to PS2**, run GCC/Clang portable source-level tests,
+ASan/UBSan and the log-parser regression:
+
+```sh
+make -f ps2/Makefile.host test CC=gcc
+make -f ps2/Makefile.host clean
+make -f ps2/Makefile.host test CC=clang
+```
+
+**On a PS2SDK / bare EE setup**:
+
+```sh
+sh ps2/build_filter_variants.sh one
+```
+
+Run `ps2/variant-elfs/all-in-one.elf` on EE/PCSX2 and save the console
+output (stdout/stderr). That single ELF checks all read filters,
+the experimental PNG write Up/Sub4/Avg4/Paeth4 filters and RGBA palette
+expansion, then benchmarks every compiled read/write/palette kernel.
+To generate an additional baseline and **all 32 combinations** of the five
+prefix families plus four additional strategy combinations, use:
+
+```sh
+sh ps2/build_filter_variants.sh all
+```
+
+It creates 38 ELFs including the all-in-one and baseline. These extra
+builds test interactions and serve as fallbacks; they are not required
+for the first complete all-option run.
+
+**On PS2 Linux userspace**, no PS2SDK is needed for the standalone test
+program if an R5900/EE-aware Linux compiler is available:
+
+```sh
+make -f ps2/Makefile.ee-linux \
+    EE_LINUX_CC=/path/to/your/ee-linux-gcc \
+    EE_LINUX_CFLAGS="-O2 -Wall -Wextra"
+```
+
+Copy and run `ps2/test_filter_mmi.ee-linux` on the PS2 Linux system,
+capturing its console output. Keep `PNG_PS2_BENCH_EE_PCCR` **disabled**
+for Linux userspace: programming EE performance-counter control registers
+may require privileged execution. The default `clock()` implementation
+records C library **clock ticks, not raw EE cycles**. If the clock is
+unimplemented and returns all zeroes, do not interpret the CSV as a speed
+measurement.
+
+On a *privileged bare-metal EE* environment only, optionally request
+PCCR0 processor-cycle counts:
+
+```sh
+PNG_PS2_BENCH_USE_PCCR=1 sh ps2/build_filter_variants.sh one
+```
+
+This experimental PCCR mode has not been validated with every PS2SDK
+toolchain and must not be used in unprivileged Linux applications.
+
+**Process the captured log**:
+
+```sh
+python3 ps2/analyze_bench.py ps2-console.txt \
+    --csv ps2-bench-raw.csv --top 30
+```
+
+The analysis rejects missing/failed correctness and incomplete benchmark
+logs. It groups candidates by the same filter, bpp, row length and
+alignment. The one-ELF sweep includes 32, 64, 128, 256, 1024, 4096 and
+16384-byte rows and seven alignments. Per-case measurements include the
+scalar baseline, candidate time and copy-only cost; batches use the best
+of three repetitions to reduce scheduling noise. Copy subtraction can
+produce zero or noisy times on short rows, so compare repeated runs and
+end-to-end PNG loading too.
+
+**Additional independent kernels**: `extra_kernels_mmi.c` contains
+write-side Up, Sub4, Avg4 and Paeth4, plus table-based indexed-palette
+expansion to RGBA8 (separate-buffer and in-place). The standalone
+`test_extra_kernels.c` validates them on host and EE. These kernels
+are **not yet installed into production libpng's pngwutil.c/pngrtran.c
+dispatch**, so library-level end-to-end integration is still a separate
+step. The same applies to hardware proof for every experimental kernel.
+
+**Note:** `test_filter_mmi.elf` with no `PNG_PS2_BENCH_ENABLE` remains
+a short, correctness-only harness, as before.
+
 ## Testing on PS2
 
 `test_filter_mmi.c` is a standalone harness that includes
