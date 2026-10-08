@@ -1,12 +1,12 @@
 #!/bin/sh
-# Build multiple standalone EE regression ELFs without changing the
-# production libpng dispatch or claiming an unmeasured speedup.
-# Invoke as: sh ps2/build_filter_variants.sh
-# Requires the PS2SDK environment, just like make -C ps2.
+# Build a one-run correctness+benchmark ELF and, optionally, a matrix.
+# Use: sh ps2/build_filter_variants.sh [one|all|matrix]
+# PCCR is privileged EE-only; PS2 Linux userspace must not enable it.
 set -eu
+: "\${PS2SDK:?Set PS2SDK and source your PS2SDK environment first}"
 
-: "${PS2SDK:?Set PS2SDK and source your EE toolchain environment first}"
-out=${PNG_PS2_VARIANTS_DIR:-ps2/variant-elfs}
+out=\${PNG_PS2_VARIANTS_DIR:-ps2/variant-elfs}
+mode=\${1:-all}
 mkdir -p "$out"
 
 build_variant()
@@ -18,40 +18,63 @@ build_variant()
     do
         flags="$flags -D$opt"
     done
-    printf '\n=== Building EE variant %s (%s) ===\n' "$name" "$flags"
+    if [ "\${PNG_PS2_BENCH_USE_PCCR:-0}" = 1 ]; then
+        case " $flags " in
+            *" PNG_PS2_BENCH_ENABLE "*) flags="$flags -DPNG_PS2_BENCH_EE_PCCR" ;;
+        esac
+    fi
+    printf '\nBUILD,%s,%s\n' "$name" "$flags"
     make -C ps2 clean
     make -C ps2 EE_OPTFLAGS="$flags"
     cp ps2/test_filter_mmi.elf "$out/$name.elf"
 }
 
-# Four independent opt-in prefix implementations: Sub3, gray Sub1/Sub2,
-# Sub4, and Sub8.  Generate all 2^4 combinations so integration mistakes
-# in simultaneous SA-using kernels are visible in the EE test harness.
-mask=0
-while [ "$mask" -lt 16 ]
-do
-    set --
-    if [ $((mask & 1)) -ne 0 ]; then
-        set -- "$@" PNG_PS2_EE_MMI_SUB3_PREFIX
-    fi
-    if [ $((mask & 2)) -ne 0 ]; then
-        set -- "$@" PNG_PS2_EE_MMI_GRAY_PREFIX16
-    fi
-    if [ $((mask & 4)) -ne 0 ]; then
-        set -- "$@" PNG_PS2_EE_MMI_SUB4_PREFIX
-    fi
-    if [ $((mask & 8)) -ne 0 ]; then
-        set -- "$@" PNG_PS2_EE_MMI_SUB8_PREFIX16
-    fi
-    build_variant "mask-$mask" "$@"
-    mask=$((mask + 1))
-done
+# Run this ELF first: complete correctness then all-kernel benchmark CSV.
+build_variant all-in-one PNG_PS2_BENCH_ENABLE \
+    PNG_PS2_EE_MMI_SUB3_PREFIX PNG_PS2_EE_MMI_GRAY_PREFIX16 \
+    PNG_PS2_EE_MMI_SUB4_PREFIX PNG_PS2_EE_MMI_SUB6_PREFIX16 \
+    PNG_PS2_EE_MMI_SUB8_PREFIX16 PNG_PS2_EE_MMI_SUB8_WORDS \
+    PNG_PS2_EE_MMI_AVG4_DUAL PNG_PS2_EE_MMI_GRAY_AVG \
+    PNG_PS2_EE_MMI_WIDE_AVG PNG_PS2_EE_MMI_PAETH \
+    PNG_PS2_EE_MMI_PAETH_MASK
 
-# Compare the third Sub8 implementation, two directly loaded word lanes.
-build_variant sub8-words PNG_PS2_EE_MMI_SUB8_WORDS
+if [ "$mode" = one ]; then
+    printf '\nONE,all-in-one,%s\n' "$out/all-in-one.elf"
+    exit 0
+fi
 
-# Stress the precedence of both Sub8 opt-ins plus optional Average/Paeth.
-# PREFIX16 takes precedence at >=64 bytes; WORDS handles 32..63 bytes.
-build_variant all-optional PNG_PS2_EE_MMI_SUB3_PREFIX PNG_PS2_EE_MMI_GRAY_PREFIX16 PNG_PS2_EE_MMI_SUB4_PREFIX PNG_PS2_EE_MMI_SUB8_PREFIX16 PNG_PS2_EE_MMI_SUB8_WORDS PNG_PS2_EE_MMI_GRAY_AVG PNG_PS2_EE_MMI_WIDE_AVG PNG_PS2_EE_MMI_PAETH
+build_variant baseline PNG_PS2_BENCH_ENABLE
 
-printf '\nBuilt 18 variants in %s. Run every ELF on EE/PCSX2 and compare PASS counts.\n' "$out"
+if [ "$mode" = all ] || [ "$mode" = matrix ]; then
+    # Five independent full-width prefix families: 2^5 combinations.
+    mask=0
+    while [ "$mask" -lt 32 ]
+    do
+        set --
+        if [ $((mask & 1)) -ne 0 ]; then
+            set -- "$@" PNG_PS2_EE_MMI_SUB3_PREFIX
+        fi
+        if [ $((mask & 2)) -ne 0 ]; then
+            set -- "$@" PNG_PS2_EE_MMI_GRAY_PREFIX16
+        fi
+        if [ $((mask & 4)) -ne 0 ]; then
+            set -- "$@" PNG_PS2_EE_MMI_SUB4_PREFIX
+        fi
+        if [ $((mask & 8)) -ne 0 ]; then
+            set -- "$@" PNG_PS2_EE_MMI_SUB8_PREFIX16
+        fi
+        if [ $((mask & 16)) -ne 0 ]; then
+            set -- "$@" PNG_PS2_EE_MMI_SUB6_PREFIX16
+        fi
+        build_variant "prefix-$mask" "$@"
+        mask=$((mask + 1))
+    done
+
+    build_variant sub8-words PNG_PS2_EE_MMI_SUB8_WORDS
+    build_variant paeth-mask PNG_PS2_EE_MMI_PAETH PNG_PS2_EE_MMI_PAETH_MASK
+    build_variant avg4-dual PNG_PS2_EE_MMI_AVG4_DUAL
+    build_variant combined-small PNG_PS2_EE_MMI_SUB8_WORDS \
+        PNG_PS2_EE_MMI_PAETH PNG_PS2_EE_MMI_PAETH_MASK \
+        PNG_PS2_EE_MMI_AVG4_DUAL
+fi
+printf '\nDONE,out=%s,mode=%s\n' "$out" "$mode"
