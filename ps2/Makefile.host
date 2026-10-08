@@ -32,6 +32,9 @@ ps2/test_gray_host: ps2/test_gray_host.c ps2/filter_gray_mmi.c
 ps2/test_paeth_mask_host: ps2/test_paeth_host.c ps2/filter_paeth_mmi.c
 	$(CC) $(CFLAGS) -DPNG_PS2_EE_MMI_PAETH_MASK ps2/test_paeth_host.c -o $@
 
+ps2/test_extra_host: ps2/test_extra_host.c ps2/test_extra_kernels.c ps2/extra_kernels_mmi.c
+	$(CC) $(CFLAGS) ps2/test_extra_host.c -o $@
+
 ps2/test_avg4_dual_host: ps2/test_avg4_dual_host.c ps2/filter_avg4_dual_mmi.c
 	$(CC) $(CFLAGS) ps2/test_avg4_dual_host.c -o $@
 
@@ -59,7 +62,7 @@ syntax-ee-gcc:
 	gcc $(CFLAGS) -Wno-unused-function -fsyntax-only ps2/test_ee_syntax.c
 	gcc $(CFLAGS) -Wno-unused-function -DPNG_PS2_SYNTAX_DEFAULT -fsyntax-only ps2/test_ee_syntax.c
 
-test: ps2/test_up_host ps2/test_gray_host ps2/test_gray_prefix_host ps2/test_rgb3_host ps2/test_rgb3_prefix_host ps2/test_wide_host ps2/test_wide_words_host ps2/test_wide_prefix_host ps2/test_wide_sub6_prefix_host ps2/test_wide_paeth_mask_host ps2/test_paeth_host ps2/test_paeth_mask_host ps2/test_avg4_dual_host ps2/test_mmi_models syntax
+test: ps2/test_up_host ps2/test_gray_host ps2/test_gray_prefix_host ps2/test_rgb3_host ps2/test_rgb3_prefix_host ps2/test_wide_host ps2/test_wide_words_host ps2/test_wide_prefix_host ps2/test_wide_sub6_prefix_host ps2/test_wide_paeth_mask_host ps2/test_paeth_host ps2/test_paeth_mask_host ps2/test_avg4_dual_host ps2/test_extra_host ps2/test_mmi_models syntax
 	./ps2/test_up_host
 	./ps2/test_gray_host
 	./ps2/test_gray_prefix_host
@@ -73,9 +76,10 @@ test: ps2/test_up_host ps2/test_gray_host ps2/test_gray_prefix_host ps2/test_rgb
 	./ps2/test_wide_paeth_mask_host
 	./ps2/test_wide_sub6_prefix_host
 	./ps2/test_avg4_dual_host
+	./ps2/test_extra_host
 	./ps2/test_mmi_models
 	python3 -m unittest discover -s ps2 -p test_analyze_bench.py
 	sh -n ps2/build_filter_variants.sh
 
 clean:
-	$(RM) ps2/test_wide_host ps2/test_wide_words_host ps2/test_wide_prefix_host ps2/test_wide_sub6_prefix_host ps2/test_wide_paeth_mask_host ps2/test_paeth_mask_host ps2/test_avg4_dual_host ps2/test_up_host ps2/test_gray_host ps2/test_gray_prefix_host ps2/test_rgb3_host ps2/test_rgb3_prefix_host ps2/test_paeth_host ps2/test_mmi_models
+	$(RM) ps2/test_wide_host ps2/test_wide_words_host ps2/test_wide_prefix_host ps2/test_wide_sub6_prefix_host ps2/test_wide_paeth_mask_host ps2/test_paeth_mask_host ps2/test_avg4_dual_host ps2/test_extra_host ps2/test_up_host ps2/test_gray_host ps2/test_gray_prefix_host ps2/test_rgb3_host ps2/test_rgb3_prefix_host ps2/test_paeth_host ps2/test_mmi_models
