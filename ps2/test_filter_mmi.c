@@ -351,9 +351,11 @@ main(void)
                            filter == PNG_PS2_TEST_PAETH_START + 2 ? "Paeth3" : "Paeth4") :
                        filter == PNG_PS2_TEST_WIDE_SUB_START ? "Sub6" :
                        filter == PNG_PS2_TEST_WIDE_SUB_START + 1 ? "Sub8" :
-                       filter == PNG_PS2_TEST_WIDE_AVG_START ? "Average6" :
-                       filter == PNG_PS2_TEST_WIDE_AVG_START + 1 ? "Average8" :
-                       filter == PNG_PS2_TEST_WIDE_PAETH_START ? "Paeth6" : "Paeth8",
+                       filter < PNG_PS2_TEST_WIDE_PAETH_START ?
+                          (filter == PNG_PS2_TEST_WIDE_AVG_START ?
+                              "Average6" : "Average8") :
+                       filter == PNG_PS2_TEST_WIDE_PAETH_START ?
+                          "Paeth6" : "Paeth8",
                    (unsigned long)len, offset);
                return 1;
             }
