@@ -135,6 +135,11 @@ static void ps2_bench_sub8_words(png_row_info *ri, png_byte *r,
     const png_byte *p) { (void)p; (void)png_ps2_wide_sub8_words(r, ri->rowbytes); }
 #endif
 
+#ifdef PNG_PS2_EE_MMI_AVG4_DUAL
+static void ps2_bench_avg4_dual(png_row_info *ri, png_byte *r,
+    const png_byte *p) { (void)png_ps2_avg4_dual(r, p, ri->rowbytes); }
+#endif
+
 static const ps2_bench_variant ps2_bench_variants[] = {
    {"up-mmi", 1, PS2_BENCH_UP, 1, png_read_filter_row_up_ps2},
    {"sub1", 1, PS2_BENCH_SUB, 1, png_read_filter_row_sub1_ps2},
@@ -145,6 +150,9 @@ static const ps2_bench_variant ps2_bench_variants[] = {
    {"sub8", 8, PS2_BENCH_SUB, 1, png_read_filter_row_sub8_ps2},
    {"avg3", 3, PS2_BENCH_AVG, 1, png_read_filter_row_avg3_ps2},
    {"avg4", 4, PS2_BENCH_AVG, 1, png_read_filter_row_avg4_ps2},
+#ifdef PNG_PS2_EE_MMI_AVG4_DUAL
+   {"avg4-dual-direct", 4, PS2_BENCH_AVG, 32, ps2_bench_avg4_dual},
+#endif
 #ifdef PNG_PS2_EE_MMI_GRAY_AVG
    {"avg1", 1, PS2_BENCH_AVG, 1, png_read_filter_row_avg1_ps2},
    {"avg2", 2, PS2_BENCH_AVG, 1, png_read_filter_row_avg2_ps2},
@@ -249,6 +257,22 @@ png_ps2_bench_all(void)
 
          for (oi = 0; oi < sizeof offsets / sizeof offsets[0]; ++oi)
          {
+            /* Direct opt-in kernels return 0 without modifying the
+             * row if their alignment preconditions are not satisfied.
+             * Skip those cases rather than benchmarking a no-op. */
+#ifdef PNG_PS2_EE_MMI_SUB4_PREFIX
+            if (v->fn == ps2_bench_sub4_prefix && offsets[oi] != 0)
+               continue;
+#endif
+#ifdef PNG_PS2_EE_MMI_SUB8_WORDS
+            if (v->fn == ps2_bench_sub8_words && (offsets[oi] & 3U))
+               continue;
+#endif
+#ifdef PNG_PS2_EE_MMI_AVG4_DUAL
+            if (v->fn == ps2_bench_avg4_dual &&
+                ((offsets[oi] | ((offsets[oi] * 7U) & 15U)) & 3U))
+               continue;
+#endif
             png_row_info ri;
             png_byte *s = src + offsets[oi];
             png_byte *r = dst + offsets[oi];
