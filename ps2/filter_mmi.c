@@ -130,6 +130,10 @@ png_read_filter_row_sub4_ps2(png_row_info *row_info, png_byte *row,
 }
 
 
+#ifdef PNG_PS2_EE_MMI_AVG4_DUAL
+#include "filter_avg4_dual_mmi.c"
+#endif
+
 /* Average, bpp=4: floor((a+b)/2) on four independent byte lanes.
  * (a&b) + (((a^b)&0xfefefefe)>>1) is the exact non-rounding mean.
  * PADDB adds the residual modulo 256 without inter-byte carries.
@@ -140,6 +144,11 @@ png_read_filter_row_avg4_ps2(png_row_info *row_info, png_byte *row,
 {
    size_t rowbytes = row_info->rowbytes;
    size_t i;
+
+#ifdef PNG_PS2_EE_MMI_AVG4_DUAL
+   if (png_ps2_avg4_dual(row, prev_row, rowbytes))
+      return;
+#endif
 
    if (rowbytes >= 4 && (rowbytes & 3U) == 0 &&
        (((size_t)row | (size_t)prev_row) & 3U) == 0)
