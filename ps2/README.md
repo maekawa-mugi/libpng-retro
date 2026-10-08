@@ -151,6 +151,45 @@ Benchmark the opt-in path against the default packed RGB8 Sub3 kernel
 using real PNGs and cycles per decoded byte. MTSAB/QFSRV scheduling,
 SA state restoration, and cache behavior require EE hardware validation.
 
+## Grayscale Sub1/Sub2 16-byte prefix alternatives
+
+The default Sub1/Sub2 decoders continue to use the packed four-byte scan.
+Define `PNG_PS2_EE_MMI_GRAY_PREFIX16` to test a full 16-byte decoder:
+Sub1 uses QFSRV shifts by 1, 2, 4, and 8 bytes, and Sub2 uses shifts
+by 2, 4, and 8 bytes. Both inject the previous decoded one/two bytes,
+save and restore SA, process a scalar alignment prefix, and handle the
+remaining bytes without out-of-range LQ/SQ. The opt-in path is attempted
+only for rows of at least 64 bytes.
+
+The portable variant uses the production function's alignment and tail
+logic with a C simulation of the 128-bit scan. The full host target now
+runs both the original and 16-byte grayscale variants, just as it does
+for the RGB8 Sub3 candidate. Neither host execution nor syntax checks
+verify the assembly or its performance on R5900.
+
+## Multi-variant EE correctness matrix
+
+Build nine separate EE harness ELFs to exercise the three experimental
+Sub1/2, Sub3 and Sub4 prefix switches individually and in all eight
+on/off combinations, plus a ninth stress build enabling all other
+optional Average and Paeth filters:
+
+```sh
+sh ps2/build_filter_variants.sh
+```
+
+The files appear in `ps2/variant-elfs/`. Each ELF must be run on EE
+hardware or PCSX2; compare the PASS count of each variant and retain
+all failed test cases. Do not choose a faster implementation solely
+from the mathematical model: benchmark cycles per decoded byte and
+whole-image decode time separately. An opt-in candidate becomes the
+production default only after correctness and a measurable gain on EE.
+
+On the host, `make -f ps2/Makefile.host test` runs the original and
+both portable-prefix sources for RGB8 and grayscale through the same
+0..1024-byte length and 16-alignment regressions. CI runs GCC, Clang,
+and sanitizer configurations for the same suite.
+
 ## RGB8 Sub3 and Average3 regression tests
 
 The production `filter_rgb3.c` contains the RGB8 read-filter loops and the
