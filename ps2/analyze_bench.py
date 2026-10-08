@@ -51,7 +51,9 @@ def parse(lines: list[str]) -> tuple[list[Sample], list[str], dict[str, int], st
             continue
         if line.startswith("PASS: ") or line.startswith("PASS "):
             statuses["correctness_pass_lines"] += 1
-        elif line.startswith("FAIL") or line.startswith("BENCH_FAIL,"):
+        elif line.startswith("EXTRA_PASS,"):
+            statuses["extra_pass_lines"] += 1
+        elif line.startswith("FAIL") or line.startswith("BENCH_FAIL,") or line.startswith("EXTRA_FAIL,"):
             issues.append(f"line {line_no}: {line}")
         elif line.startswith("BENCH_INFO,"):
             for token in line.split(",")[1:]:
@@ -93,15 +95,20 @@ def analyze(lines: list[str], top: int = 20) -> tuple[int, list[Sample]]:
         print("NOTE: timer output is CLOCK TICKS, not measured EE CPU cycles.")
     print(
         f"Correctness PASS lines: {statuses['correctness_pass_lines']}; "
+        f"extra PASS lines: {statuses['extra_pass_lines']}; "
         f"completed benchmark runs: {statuses['benchmark_runs_completed']}; "
         f"rows: {len(samples)}; failures: {len(issues)}"
     )
     if not statuses["correctness_pass_lines"]:
         issues.append("No correctness PASS line in the supplied log")
+    if not statuses["extra_pass_lines"]:
+        issues.append("No EXTRA_PASS line: forward/palette tests may not have run")
     if not statuses["benchmark_runs_completed"]:
         issues.append("No BENCH_DONE line: output may be incomplete")
     if not samples:
         issues.append("No benchmark rows found")
+    elif not any(row.scalar_net > 0 and row.optimized_net > 0 for row in samples):
+        issues.append("All measured net timings are zero; timer may be unavailable")
     for issue in issues[:30]:
         print(f"ERROR: {issue}", file=sys.stderr)
 
