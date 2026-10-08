@@ -76,3 +76,18 @@ pipeline hazards or speed.
 
 The library must still be tested on real EE hardware.  The backend does
 not accelerate zlib/DEFLATE, palette expansion, PNG writing, or VU0/VU1.
+
+## Host-side algorithm checks
+
+The deterministic, standalone `test_mmi_models.c` verifies the
+byte-exact packed Average4 arithmetic and the 16-byte Sub4 prefix-scan
+algorithm against independent scalar references. It does **not** execute
+R5900 instructions:
+
+```sh
+cc -std=c99 -O2 -Wall -Wextra -Werror ps2/test_mmi_models.c -o test_mmi_models
+./test_mmi_models
+```
+
+Run `test_filter_mmi.c` under an EE toolchain and on PS2 hardware to
+exercise the actual MMI assembly and its timing.
