@@ -11,7 +11,11 @@
 static void
 png_init_filter_functions_ps2(png_struct *pp, unsigned int bpp)
 {
+#ifdef PNG_PS2_EE_MMI_UP_2X
+   pp->read_filter[PNG_FILTER_VALUE_UP-1] = png_read_filter_row_up_2x_ps2;
+#else
    pp->read_filter[PNG_FILTER_VALUE_UP-1] = png_read_filter_row_up_ps2;
+#endif
 
    if (bpp == 1 || bpp == 2)
    {
