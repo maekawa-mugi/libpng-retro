@@ -54,4 +54,4 @@ build_variant sub8-words PNG_PS2_EE_MMI_SUB8_WORDS
 # PREFIX16 takes precedence at >=64 bytes; WORDS handles 32..63 bytes.
 build_variant all-optional PNG_PS2_EE_MMI_SUB3_PREFIX PNG_PS2_EE_MMI_GRAY_PREFIX16 PNG_PS2_EE_MMI_SUB4_PREFIX PNG_PS2_EE_MMI_SUB8_PREFIX16 PNG_PS2_EE_MMI_SUB8_WORDS PNG_PS2_EE_MMI_GRAY_AVG PNG_PS2_EE_MMI_WIDE_AVG PNG_PS2_EE_MMI_PAETH
 
-printf '\\nBuilt 18 variants in %s. Run every ELF on EE/PCSX2 and compare PASS counts.\\n' "$out"
+printf '\nBuilt 18 variants in %s. Run every ELF on EE/PCSX2 and compare PASS counts.\n' "$out"
