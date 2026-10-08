@@ -227,6 +227,9 @@ png_read_filter_row_avg4_ps2(png_row_info *row_info, png_byte *row,
    }
 }
 
+/* Packed grayscale/gray-alpha (bpp=1/2) filters. */
+#include "filter_gray_mmi.c"
+
 /* Packed RGB8 (bpp=3) filters. */
 #include "filter_rgb3.c"
 

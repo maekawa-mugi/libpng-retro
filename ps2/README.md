@@ -33,8 +33,10 @@ or `filter_mmi.c`, since `pngsimd.c` includes the backend through
 | Up, all byte-per-pixel sizes | 16-byte EE MMI LQ / PADDB / SQ, scalar tail |
 | Sub, 4 bytes per pixel | 4-byte packed EE MMI PADDB; optional 16-byte prefix scan |
 | Average, 4 bytes per pixel | Exact packed 4-byte mean + EE MMI PADDB |
-| Sub, 3 bytes per pixel | Three packed byte lanes with EE MMI PADDB |\n| Sub, other byte-per-pixel sizes | Generic libpng C |
-| Average, 3 bytes per pixel | Exact three-lane packed average and EE MMI PADDB |\n| Paeth, 3/4 bytes per pixel | Optional packed MMI PADDB after exact scalar predictor |\n| Average for other pixel sizes / Paeth otherwise | Generic libpng C |
+| Sub, 3 bytes per pixel | Three packed byte lanes with EE MMI PADDB |\n| Sub, 1/2 bytes per pixel | Four-byte prefix scan via EE PADDB, bytewise tails |
+| Sub, other byte-per-pixel sizes | Generic libpng C |
+| Average, 3 bytes per pixel | Exact three-lane packed average and EE MMI PADDB |\n| Paeth, 3/4 bytes per pixel | Optional packed MMI PADDB after exact scalar predictor |\n| Average, 1/2 bytes per pixel | Experimental packed ADD, opt-in only |
+| Average for other pixel sizes / Paeth otherwise | Generic libpng C |
 
 Define `PNG_PS2_EE_MMI_SUB4_PREFIX` to try an experimental 128-bit
 Sub4 prefix scan using QFSRV, PADDB, PEXTLW and PCPYLD. This is opt-in
@@ -154,3 +156,21 @@ including truncated rows, all 16 alignments and post-row canaries. Both
 GCC with ASan/UBSan and Clang pass this test on the development host.
 
 No speedup is claimed for Paeth until EE hardware measurement.
+
+## Sub1/Sub2 and experimental Average1/Average2
+
+`filter_gray_mmi.c` uses EE `PADDB` to reconstruct four Sub1 bytes or
+two Sub2 pixels per iteration with a packed-byte prefix scan. This is enabled
+by default for PNG rows with one or two bytes per pixel. It never loads or
+stores past the row; it handles arbitrary alignment and scalar tails.
+
+Define `PNG_PS2_EE_MMI_GRAY_AVG` to register experimental Average1 and
+Average2 filters. Their left-neighbor dependency limits SIMD parallelism,
+so the generic C implementations remain the default until benchmarks on EE
+prove these alternatives worthwhile.
+
+The `test_gray_host.c` regression compiles the actual grayscale C loops
+with only the `PADDB` helper replaced by its exact bytewise equivalent.
+It tests Sub1/Sub2/Average1/Average2 against independent scalar references,
+including 0..1024 byte rows, all 16 address alignments, and 16-byte
+post-row canaries. Run with `make -f ps2/Makefile.host test`.
