@@ -1,0 +1,115 @@
+/* ps2/test_filter_mmi.c - small independent EE MMI row-filter test
+ *
+ * Build as an EE program (PS2SDK), not as part of libpng.
+ * This code is released under the libpng license.
+ */
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+
+typedef unsigned char png_byte;
+typedef struct png_row_info_test_struct
+{
+   size_t rowbytes;
+} png_row_info;
+
+#include "filter_mmi.c"
+
+#define TEST_MAX 1024U
+#define BUF_SIZE (TEST_MAX + 64U)
+
+static png_byte row_storage[BUF_SIZE];
+static png_byte prev_storage[BUF_SIZE];
+static png_byte original[BUF_SIZE];
+static png_byte expected[BUF_SIZE];
+static png_byte prev_original[BUF_SIZE];
+static unsigned int rng_state = 0x735a2dc1U;
+
+static png_byte *
+aligned16(png_byte *p)
+{
+   return p + ((16U - ((size_t)p & 15U)) & 15U);
+}
+
+static png_byte
+random_byte(void)
+{
+   rng_state ^= rng_state << 13;
+   rng_state ^= rng_state >> 17;
+   rng_state ^= rng_state << 5;
+   return (png_byte)rng_state;
+}
+
+static void
+reference_up(png_byte *row, const png_byte *prev, size_t n)
+{
+   size_t i;
+   for (i = 0; i < n; ++i)
+      row[i] = (png_byte)((unsigned int)row[i] + (unsigned int)prev[i]);
+}
+
+static void
+reference_sub4(png_byte *row, size_t n)
+{
+   size_t i;
+   for (i = 4; i < n; ++i)
+      row[i] = (png_byte)((unsigned int)row[i] + (unsigned int)row[i - 4]);
+}
+
+int
+main(void)
+{
+   unsigned int filter;
+   unsigned int offset;
+   size_t len;
+   unsigned int cases = 0;
+
+   for (filter = 0; filter < 2; ++filter)
+   {
+      for (offset = 0; offset < 16; ++offset)
+      {
+         for (len = 0; len <= TEST_MAX; ++len)
+         {
+            png_row_info row_info;
+            png_byte *row = aligned16(row_storage) + offset;
+            png_byte *prev = aligned16(prev_storage) + ((offset * 7) & 15U);
+            size_t i;
+
+            for (i = 0; i <= len; ++i)
+            {
+               row[i] = random_byte();
+               prev[i] = random_byte();
+            }
+
+            memcpy(original, row, len + 1);
+            memcpy(expected, row, len + 1);
+            memcpy(prev_original, prev, len + 1);
+            row_info.rowbytes = len;
+
+            if (filter == 0)
+            {
+               reference_up(expected, prev, len);
+               png_read_filter_row_up_ps2(&row_info, row, prev);
+            }
+            else
+            {
+               reference_sub4(expected, len);
+               png_read_filter_row_sub4_ps2(&row_info, row, prev);
+            }
+
+            if (memcmp(expected, row, len + 1) != 0 ||
+                memcmp(prev_original, prev, len + 1) != 0)
+            {
+               printf("FAIL: %s len=%lu offset=%u\n",
+                   filter == 0 ? "Up" : "Sub4",
+                   (unsigned long)len, offset);
+               return 1;
+            }
+            ++cases;
+         }
+      }
+   }
+
+   printf("PASS: %u PS2 EE MMI filter cases\n", cases);
+   return 0;
+}
