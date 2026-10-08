@@ -126,6 +126,31 @@ make -C ps2 EE_OPTFLAGS="-O2 -DPNG_PS2_EE_MMI_SUB4_PREFIX"
 The regular build covers Up, Sub4 and Average4; rebuilding with this
 flag also exercises QFSRV and the SA register save/restore sequence.
 
+## Experimental RGB8 Sub3 128-bit prefix scan
+
+Define `PNG_PS2_EE_MMI_SUB3_PREFIX` to opt into a 16-byte Sub3 reverse
+filter. The code reconstructs each aligned vector using QFSRV byte shifts
+of 3, 6 and 12 and PADDB, injecting the preceding three decoded bytes.
+It saves/restores SA, inserts separation between SA-dependent instructions,
+and uses scalar processing until 16-byte alignment and for the row tail.
+Rows shorter than 64 bytes continue using the existing packed implementation.
+The default Sub3 backend is unchanged.
+
+Host tests run the actual alignment and dispatch logic with a portable
+16-lane scan, comparing against an independent scalar reference for all
+lengths 0..1024 and all 16 row alignments. This does **not** execute the
+R5900 instructions or establish an EE speedup. Run the full EE filter
+harness with:
+
+```sh
+make -C ps2 clean
+make -C ps2 EE_OPTFLAGS="-O2 -DPNG_PS2_EE_MMI_SUB3_PREFIX"
+```
+
+Benchmark the opt-in path against the default packed RGB8 Sub3 kernel
+using real PNGs and cycles per decoded byte. MTSAB/QFSRV scheduling,
+SA state restoration, and cache behavior require EE hardware validation.
+
 ## RGB8 Sub3 and Average3 regression tests
 
 The production `filter_rgb3.c` contains the RGB8 read-filter loops and the
