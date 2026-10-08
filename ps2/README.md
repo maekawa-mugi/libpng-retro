@@ -31,9 +31,15 @@ or `filter_mmi.c`, since `pngsimd.c` includes the backend through
 | --- | --- |
 | None | No operation |
 | Up, all byte-per-pixel sizes | 16-byte EE MMI LQ / PADDB / SQ, scalar tail |
-| Sub, 4 bytes per pixel | 4-byte packed EE MMI PADDB |
+| Sub, 4 bytes per pixel | 4-byte packed EE MMI PADDB; optional 16-byte prefix scan |
+| Average, 4 bytes per pixel | Exact packed 4-byte mean + EE MMI PADDB |
 | Sub, other byte-per-pixel sizes | Generic libpng C |
-| Average / Paeth | Generic libpng C |
+| Average for other pixel sizes / Paeth | Generic libpng C |
+
+Define `PNG_PS2_EE_MMI_SUB4_PREFIX` to try an experimental 128-bit
+Sub4 prefix scan using QFSRV, PADDB, PEXTLW and PCPYLD. This is opt-in
+until it has been tested on real EE hardware and benchmarked. The scan
+preserves the EE SA register; the default still uses the simpler Sub4 loop.
 
 The accelerated functions check pointer alignment; nonconforming input is
 handled by a bytewise fallback without out-of-range loads.  The libpng
@@ -42,7 +48,7 @@ row allocator already supports a 16-byte-aligned pixel start when
 addition, **not saturating addition**.
 
 Both functions work on the *actual* row byte length, including shorter
-Adam7 passes.  The accelerated Sub4 loop is horizontal and intentionally
+Adam7 passes.  The default Sub4 loop is horizontal and intentionally
 uses only the low four byte lanes of PADDB; an optimized full-width
 prefix-sum implementation could replace it after profiling.
 
@@ -52,7 +58,7 @@ prefix-sum implementation could replace it after profiling.
 `filter_mmi.c` with minimal compatible type definitions.  Compile it
 as an EE program with the PS2SDK toolchain and run it on hardware or in
 an emulator.  It exercises lengths 0..1024 and 16 possible input
-alignments for Up and Sub4, checking against independent scalar
+alignments for Up, Sub4 and Average4, checking against independent scalar
 reference functions, checking input preservation and output bounds.
 
 Also test with real PNGs (using libpng's `pngtest` or your application's
@@ -63,6 +69,10 @@ image-loading path):
 - Each PNG filter, mixed-filter images, truncated/bad input handling
 - Compare output byte-for-byte with an EE generic-C build
 - Benchmark decoding time, unfilter time and whole-program time separately
+
+A portable mathematical model of the packed mean and prefix-sum scan was
+tested on the development host. This does not verify EE assembler syntax,
+pipeline hazards or speed.
 
 The library must still be tested on real EE hardware.  The backend does
 not accelerate zlib/DEFLATE, palette expansion, PNG writing, or VU0/VU1.

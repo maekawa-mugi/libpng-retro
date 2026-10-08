@@ -55,6 +55,18 @@ reference_sub4(png_byte *row, size_t n)
       row[i] = (png_byte)((unsigned int)row[i] + (unsigned int)row[i - 4]);
 }
 
+static void
+reference_avg4(png_byte *row, const png_byte *prev, size_t n)
+{
+   size_t i;
+   for (i = 0; i < n; ++i)
+   {
+      unsigned int left = i >= 4 ? row[i - 4] : 0;
+      row[i] = (png_byte)((unsigned int)row[i] +
+          ((left + (unsigned int)prev[i]) >> 1));
+   }
+}
+
 int
 main(void)
 {
@@ -63,7 +75,7 @@ main(void)
    size_t len;
    unsigned int cases = 0;
 
-   for (filter = 0; filter < 2; ++filter)
+   for (filter = 0; filter < 3; ++filter)
    {
       for (offset = 0; offset < 16; ++offset)
       {
@@ -89,17 +101,22 @@ main(void)
                reference_up(expected, prev, len);
                png_read_filter_row_up_ps2(&row_info, row, prev);
             }
-            else
+            else if (filter == 1)
             {
                reference_sub4(expected, len);
                png_read_filter_row_sub4_ps2(&row_info, row, prev);
+            }
+            else
+            {
+               reference_avg4(expected, prev, len);
+               png_read_filter_row_avg4_ps2(&row_info, row, prev);
             }
 
             if (memcmp(expected, row, len + 1) != 0 ||
                 memcmp(prev_original, prev, len + 1) != 0)
             {
                printf("FAIL: %s len=%lu offset=%u\n",
-                   filter == 0 ? "Up" : "Sub4",
+                   filter == 0 ? "Up" : (filter == 1 ? "Sub4" : "Average4"),
                    (unsigned long)len, offset);
                return 1;
             }
