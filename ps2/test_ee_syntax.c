@@ -17,6 +17,8 @@ typedef struct { size_t rowbytes; } png_row_info;
 #define PNG_PS2_EE_MMI_GRAY_PREFIX16 1
 #define PNG_PS2_EE_MMI_SUB8_WORDS 1
 #define PNG_PS2_EE_MMI_SUB8_PREFIX16 1
+#define PNG_PS2_EE_MMI_SUB6_PREFIX16 1
+#define PNG_PS2_EE_MMI_PAETH_MASK 1
 #endif
 #ifdef PNG_PS2_SYNTAX_PORTABLE
 #define PNG_PS2_UP_PORTABLE_ADD 1
