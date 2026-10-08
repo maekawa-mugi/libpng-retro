@@ -211,6 +211,30 @@ The `test_up_host.c` regression compiles this source with a portable
 previous-row alignment and row lengths 0..1024 with canary checks.
 This does not validate R5900 instruction timing or assembly semantics.
 
+## Packed-filter loop unrolling (performance candidate)
+
+The regular `Up` path now handles **two 16-byte LQ/PADDB/SQ vectors per
+loop iteration** when both row pointers have the same alignment modulo 16.
+The two raw vectors are loaded independently before the additions, with a
+single-vector epilogue for odd vector counts. The scalar alignment prologue
+and byte tail remain unchanged.
+
+The default packed `Sub4` path now handles **four RGBA8 pixels per
+iteration** with four aligned word loads, a dependent PADDB chain, and four
+word stores. One to three remaining pixels still use the original
+single-word loop. Short rows, non-word-aligned rows and truncated rows keep
+the previous behavior. The separate experimental full 128-bit
+`PNG_PS2_EE_MMI_SUB4_PREFIX` option is unchanged.
+
+These changes target branch overhead and load scheduling; they are **not
+verified speedups**. The portable Up source-level test exercises the new
+two-vector grouping, and `test_mmi_models.c` checks the four-pixel Sub4
+grouping and its tails against a scalar reference. Neither proves EE
+instruction scheduling or runtime correctness. For A/B comparison, benchmark
+the same EE toolchain and PNG workload on `eemmi` and the optimization
+branch, then rerun `make -C ps2` and the complete PNG regression suite on
+an EE target. Include short rows and Adam7 interlace.
+
 ## Host C translation-unit checks
 
 The `test_ee_syntax.c` unit includes the MMI-only filter sources and
