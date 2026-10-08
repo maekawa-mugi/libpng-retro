@@ -140,6 +140,42 @@ static void ps2_bench_avg4_dual(png_row_info *ri, png_byte *r,
     const png_byte *p) { (void)png_ps2_avg4_dual(r, p, ri->rowbytes); }
 #endif
 
+/* Keep a direct benchmark entry for the pre-prefix packed Sub3 loop.
+ * It uses exactly the same production packed-load/add/store helpers.
+ */
+static void
+ps2_bench_sub3_packed(png_row_info *ri, png_byte *row, const png_byte *prev)
+{
+   size_t i, n = ri->rowbytes;
+   png_uint_32 left;
+   (void)prev;
+   if (n <= 3)
+      return;
+   left = png_ps2_pack_rgb3(row);
+   for (i = 3; n - i >= 3; i += 3)
+   {
+      png_uint_32 decoded = png_ps2_add_rgb3(
+          png_ps2_pack_rgb3(row + i), left);
+      png_ps2_store_rgb3(row + i, decoded);
+      left = decoded;
+   }
+   for (; i < n; ++i)
+      row[i] = (png_byte)((unsigned int)row[i] +
+          (unsigned int)row[i - 3]);
+}
+
+static void
+ps2_bench_sub6_packed(png_row_info *ri, png_byte *row, const png_byte *prev)
+{
+   png_ps2_wide_sub(ri, row, prev, 6);
+}
+
+static void
+ps2_bench_sub8_packed(png_row_info *ri, png_byte *row, const png_byte *prev)
+{
+   png_ps2_wide_sub(ri, row, prev, 8);
+}
+
 static const ps2_bench_variant ps2_bench_variants[] = {
    {"up-mmi", 1, PS2_BENCH_UP, 1, png_read_filter_row_up_ps2},
    {"sub1", 1, PS2_BENCH_SUB, 1, png_read_filter_row_sub1_ps2},
@@ -148,6 +184,9 @@ static const ps2_bench_variant ps2_bench_variants[] = {
    {"sub4", 4, PS2_BENCH_SUB, 1, png_read_filter_row_sub4_ps2},
    {"sub6", 6, PS2_BENCH_SUB, 1, png_read_filter_row_sub6_ps2},
    {"sub8", 8, PS2_BENCH_SUB, 1, png_read_filter_row_sub8_ps2},
+   {"sub3-packed-direct", 3, PS2_BENCH_SUB, 1, ps2_bench_sub3_packed},
+   {"sub6-packed-direct", 6, PS2_BENCH_SUB, 1, ps2_bench_sub6_packed},
+   {"sub8-packed-direct", 8, PS2_BENCH_SUB, 1, ps2_bench_sub8_packed},
    {"avg3", 3, PS2_BENCH_AVG, 1, png_read_filter_row_avg3_ps2},
    {"avg4", 4, PS2_BENCH_AVG, 1, png_read_filter_row_avg4_ps2},
 #ifdef PNG_PS2_EE_MMI_AVG4_DUAL
