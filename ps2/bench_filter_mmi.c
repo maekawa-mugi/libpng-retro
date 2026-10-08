@@ -244,6 +244,9 @@ ps2_bench_palette_expand(png_row_info *ri, png_byte *row,
        ps2_bench_palette_table);
 }
 
+/* Benchmark-only snapshots of unchanged eemmi packed filter kernels. */
+#include "bench_baseline_mmi.c"
+
 static const ps2_bench_variant ps2_bench_variants[] = {
    {"write-up-mmi", 1, PS2_BENCH_WRITE_UP, 1, png_ps2_write_up_mmi},
    {"write-sub4-mmi", 4, PS2_BENCH_WRITE_SUB4, 1, png_ps2_write_sub4_mmi},
@@ -267,6 +270,10 @@ static const ps2_bench_variant ps2_bench_variants[] = {
    {"sub3-packed-direct", 3, PS2_BENCH_SUB, 1, ps2_bench_sub3_packed},
    {"sub6-packed-direct", 6, PS2_BENCH_SUB, 1, ps2_bench_sub6_packed},
    {"sub8-packed-direct", 8, PS2_BENCH_SUB, 1, ps2_bench_sub8_packed},
+   {"sub1-original-direct", 1, PS2_BENCH_SUB, 1, png_ps2_bench_sub1_original},
+   {"sub2-original-direct", 2, PS2_BENCH_SUB, 1, png_ps2_bench_sub2_original},
+   {"sub4-original-direct", 4, PS2_BENCH_SUB, 1, png_ps2_bench_sub4_original},
+   {"avg4-original-direct", 4, PS2_BENCH_AVG, 1, png_ps2_bench_avg4_original},
    {"avg3", 3, PS2_BENCH_AVG, 1, png_read_filter_row_avg3_ps2},
    {"avg4", 4, PS2_BENCH_AVG, 1, png_read_filter_row_avg4_ps2},
 #ifdef PNG_PS2_EE_MMI_AVG4_DUAL
