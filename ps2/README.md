@@ -190,3 +190,17 @@ make -C ps2 EE_OPTFLAGS="-O2 -DPNG_PS2_EE_MMI_GRAY_AVG -DPNG_PS2_EE_MMI_PAETH"
 ```
 
 Use actual hardware or an EE emulator to test the instruction paths.
+
+## Aligned-pair Up SIMD prologue
+
+`filter_up_mmi.c` implements the Up filter with a scalar alignment
+prologue before the 16-byte `LQ/PADDB/SQ` loop. Even if both row
+pointers initially have nonzero alignment, the vector loop can now run
+when the pointers have identical alignment modulo 16. If their
+alignments differ, the row uses scalar code to avoid unaligned LQ/SQ.
+No partial quadword loads/stores are performed at row edges.
+
+The `test_up_host.c` regression compiles this source with a portable
+16-lane PADDB equivalent. It verifies all 256 combinations of row and
+previous-row alignment and row lengths 0..1024 with canary checks.
+This does not validate R5900 instruction timing or assembly semantics.

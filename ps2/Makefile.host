@@ -8,6 +8,9 @@ all: test
 ps2/test_rgb3_host: ps2/test_rgb3_host.c ps2/filter_rgb3.c
 	$(CC) $(CFLAGS) ps2/test_rgb3_host.c -o $@
 
+ps2/test_up_host: ps2/test_up_host.c ps2/filter_up_mmi.c
+	$(CC) $(CFLAGS) ps2/test_up_host.c -o $@
+
 ps2/test_gray_host: ps2/test_gray_host.c ps2/filter_gray_mmi.c
 	$(CC) $(CFLAGS) ps2/test_gray_host.c -o $@
 
@@ -17,11 +20,12 @@ ps2/test_paeth_host: ps2/test_paeth_host.c ps2/filter_paeth_mmi.c
 ps2/test_mmi_models: ps2/test_mmi_models.c
 	$(CC) $(CFLAGS) ps2/test_mmi_models.c -o $@
 
-test: ps2/test_gray_host ps2/test_rgb3_host ps2/test_paeth_host ps2/test_mmi_models
+test: ps2/test_up_host ps2/test_gray_host ps2/test_rgb3_host ps2/test_paeth_host ps2/test_mmi_models
+	./ps2/test_up_host
 	./ps2/test_gray_host
 	./ps2/test_rgb3_host
 	./ps2/test_paeth_host
 	./ps2/test_mmi_models
 
 clean:
-	$(RM) ps2/test_gray_host ps2/test_rgb3_host ps2/test_paeth_host ps2/test_mmi_models
+	$(RM) ps2/test_up_host ps2/test_gray_host ps2/test_rgb3_host ps2/test_paeth_host ps2/test_mmi_models

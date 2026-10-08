@@ -8,50 +8,8 @@
  * LQ and SQ mask off address bits 0..3, so guard 16-byte alignment.
  */
 
-/* PNG Up: every byte is independent of all other bytes in the row.
- * A 16-byte LQ / PADDB / SQ loop followed by a scalar tail.
- */
-static void
-png_read_filter_row_up_ps2(png_row_info *row_info, png_byte *row,
-    const png_byte *prev_row)
-{
-   size_t remaining = row_info->rowbytes;
-
-   if (remaining >= 16 &&
-       (((size_t)row | (size_t)prev_row) & 15U) == 0)
-   {
-      unsigned int blocks = (unsigned int)(remaining >> 4);
-      remaining &= 15U;
-
-      __asm__ volatile (
-         ".set push\n\t"
-         ".set noreorder\n\t"
-         "1:\n\t"
-         "lq    $8, 0(%[row])\n\t"
-         "lq    $9, 0(%[prev])\n\t"
-         "paddb $8, $8, $9\n\t"
-         "sq    $8, 0(%[row])\n\t"
-         "addiu %[row], %[row], 16\n\t"
-         "addiu %[prev], %[prev], 16\n\t"
-         "addiu %[blocks], %[blocks], -1\n\t"
-         "bnez  %[blocks], 1b\n\t"
-         "nop\n\t"
-         ".set pop\n\t"
-         : [row] "+r" (row), [prev] "+r" (prev_row),
-           [blocks] "+r" (blocks)
-         :
-         : "$8", "$9", "memory"
-      );
-   }
-
-   while (remaining-- != 0)
-   {
-      *row = (png_byte)((unsigned int)*row + (unsigned int)*prev_row);
-      ++row;
-      ++prev_row;
-   }
-}
-
+/* 16-byte EE MMI Up filter and safe nonaligned prologue. */
+#include "filter_up_mmi.c"
 
 #if defined(PNG_PS2_EE_MMI_SUB4_PREFIX)
 /* Experimental four-pixel, 128-bit Sub4 prefix scan.
