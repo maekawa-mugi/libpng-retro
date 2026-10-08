@@ -88,13 +88,13 @@ output (stdout/stderr). That single ELF checks all read filters,
 the experimental PNG write Up/Sub4/Avg4/Paeth4 filters and RGBA palette
 expansion, then benchmarks every compiled read/write/palette kernel.
 To generate an additional baseline and **all 32 combinations** of the five
-prefix families plus four additional strategy combinations, use:
+prefix families plus seven additional strategy combinations, use:
 
 ```sh
 sh ps2/build_filter_variants.sh all
 ```
 
-It creates 38 ELFs including the all-in-one and baseline. These extra
+It creates 41 ELFs including the all-in-one and baseline. These extra
 builds test interactions and serve as fallbacks; they are not required
 for the first complete all-option run.
 
@@ -139,6 +139,14 @@ scalar baseline, candidate time and copy-only cost; batches use the best
 of three repetitions to reduce scheduling noise. Copy subtraction can
 produce zero or noisy times on short rows, so compare repeated runs and
 end-to-end PNG loading too.
+
+**Up/Sub4 unrolled candidates from the separate optimization PR are
+included here as opt-ins.** Define `PNG_PS2_EE_MMI_UP_2X` to use the
+two-vector Up loop, or `PNG_PS2_EE_MMI_SUB4_UNROLL4` for a four-pixel
+Sub4 word loop when the Sub4 prefix candidate did not handle that row.
+The all-in-one benchmark directly times the unrolled functions and
+the original Sub3/Sub6/Sub8 packed baselines. No default is switched
+without actual EE speed and correctness evidence.
 
 **Additional independent kernels**: `extra_kernels_mmi.c` contains
 write-side Up, Sub4, Avg4 and Paeth4, plus table-based indexed-palette
