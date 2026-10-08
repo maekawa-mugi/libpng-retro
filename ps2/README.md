@@ -256,3 +256,8 @@ make -C ps2 EE_OPTFLAGS="-O2 -DPNG_PS2_EE_MMI_GRAY_AVG -DPNG_PS2_EE_MMI_WIDE_AVG
 
 Cross-compilation and real EE hardware execution are still required
 before this backend can be considered hardware-validated.
+
+The host syntax target now parses both the default MMI-only source
+configuration and the all-opt-in source configuration. The GCC-only
+`syntax-ee-gcc` target parses the actual inline-assembly operands in
+both configurations without assembling R5900 instructions.

@@ -28,10 +28,12 @@ ps2/test_mmi_models: ps2/test_mmi_models.c
 .PHONY: syntax syntax-ee-gcc
 syntax:
 	$(CC) $(CFLAGS) -Wno-unused-function -DPNG_PS2_SYNTAX_PORTABLE -fsyntax-only ps2/test_ee_syntax.c
+	$(CC) $(CFLAGS) -Wno-unused-function -DPNG_PS2_SYNTAX_PORTABLE -DPNG_PS2_SYNTAX_DEFAULT -fsyntax-only ps2/test_ee_syntax.c
 
 # GCC parses the inline assembly constraints but still does NOT assemble it.
 syntax-ee-gcc:
 	gcc $(CFLAGS) -Wno-unused-function -fsyntax-only ps2/test_ee_syntax.c
+	gcc $(CFLAGS) -Wno-unused-function -DPNG_PS2_SYNTAX_DEFAULT -fsyntax-only ps2/test_ee_syntax.c
 
 test: ps2/test_up_host ps2/test_gray_host ps2/test_rgb3_host ps2/test_wide_host ps2/test_paeth_host ps2/test_mmi_models syntax
 	./ps2/test_up_host
