@@ -204,3 +204,14 @@ The `test_up_host.c` regression compiles this source with a portable
 16-lane PADDB equivalent. It verifies all 256 combinations of row and
 previous-row alignment and row lengths 0..1024 with canary checks.
 This does not validate R5900 instruction timing or assembly semantics.
+
+## Host C translation-unit checks
+
+The `test_ee_syntax.c` unit includes the MMI-only filter sources and
+checks their C declarations and optional feature combinations without
+requiring a PS2 cross-toolchain. The normal host test target also compiles
+this file with portable equivalents of the `PADDB` helper on GCC/Clang.
+Use `make -f ps2/Makefile.host syntax-ee-gcc` for an additional GCC
+syntax-only pass over the R5900 inline-assembly strings. Neither mode
+validates PS2 instruction assembly or runtime behavior; use PS2SDK and
+an EE target for that.
