@@ -210,6 +210,7 @@ reference_wide_avg(png_byte *row, const png_byte *prev, size_t n,
 /* The same ELF first runs all correctness cases, then (opt-in)
  * independently checks and times every registered MMI variant. */
 #ifdef PNG_PS2_BENCH_ENABLE
+#include "test_extra_kernels.c"
 #include "bench_filter_mmi.c"
 #endif
 
@@ -372,6 +373,8 @@ main(void)
 
    printf("PASS: %u PS2 EE MMI filter cases\n", cases);
 #ifdef PNG_PS2_BENCH_ENABLE
+   if (png_ps2_test_extra() != 0)
+      return 1;
    if (png_ps2_bench_all() != 0)
       return 1;
 #endif
