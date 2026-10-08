@@ -24,6 +24,7 @@ EE_LINUX_DEFINES ?= \
   -DPNG_PS2_EE_MMI_SUB6_PREFIX16 \
   -DPNG_PS2_EE_MMI_SUB8_PREFIX16 \
   -DPNG_PS2_EE_MMI_SUB8_WORDS \
+  -DPNG_PS2_EE_MMI_UP_2X -DPNG_PS2_EE_MMI_SUB4_UNROLL4 \
   -DPNG_PS2_EE_MMI_AVG4_DUAL \
   -DPNG_PS2_EE_MMI_GRAY_AVG \
   -DPNG_PS2_EE_MMI_WIDE_AVG \
@@ -39,6 +40,7 @@ $(EE_LINUX_BIN): ps2/test_filter_mmi.c ps2/bench_filter_mmi.c \
   ps2/filter_wide_mmi.c ps2/filter_paeth_mmi.c \
   ps2/filter_sub3_prefix_mmi.c ps2/filter_gray_prefix_mmi.c \
   ps2/filter_sub6_prefix_mmi.c ps2/filter_sub8_prefix_mmi.c \
+  ps2/filter_up_unrolled_mmi.c ps2/filter_sub4_unrolled_mmi.c \
   ps2/filter_avg4_dual_mmi.c
 	$(EE_LINUX_CC) $(EE_LINUX_CFLAGS) $(EE_LINUX_DEFINES) \
 	  ps2/test_filter_mmi.c -o $@ $(EE_LINUX_LDFLAGS) $(EE_LINUX_LIBS)
