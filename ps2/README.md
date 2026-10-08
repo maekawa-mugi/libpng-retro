@@ -35,7 +35,7 @@ or `filter_mmi.c`, since `pngsimd.c` includes the backend through
 | Average, 4 bytes per pixel | Exact packed 4-byte mean + EE MMI PADDB |
 | Sub, 3 bytes per pixel | Three packed byte lanes with EE MMI PADDB |\n| Sub, 1/2 bytes per pixel | Four-byte prefix scan via EE PADDB, bytewise tails |
 | Sub, other byte-per-pixel sizes | Generic libpng C |
-| Average, 3 bytes per pixel | Exact three-lane packed average and EE MMI PADDB |\n| Paeth, 3/4 bytes per pixel | Optional packed MMI PADDB after exact scalar predictor |\n| Average, 1/2 bytes per pixel | Experimental packed ADD, opt-in only |
+| Average, 3 bytes per pixel | Exact three-lane packed average and EE MMI PADDB |\n| Paeth, 1/2/3/4 bytes per pixel | Optional packed MMI PADDB after exact scalar predictor |\n| Average, 1/2 bytes per pixel | Experimental packed ADD, opt-in only |
 | Average for other pixel sizes / Paeth otherwise | Generic libpng C |
 
 Define `PNG_PS2_EE_MMI_SUB4_PREFIX` to try an experimental 128-bit
@@ -76,8 +76,8 @@ A portable mathematical model of the packed mean and prefix-sum scan was
 tested on the development host. This does not verify EE assembler syntax,
 pipeline hazards or speed.
 
-Define `PNG_PS2_EE_MMI_PAETH` to explicitly register experimental Paeth3
-and Paeth4 filters. Predictors use scalar comparisons and respect PNG
+Define `PNG_PS2_EE_MMI_PAETH` to explicitly register experimental Paeth1,
+Paeth2, Paeth3 and Paeth4 filters. Predictors use scalar comparisons and respect PNG
 Paeth tie priority; the final modulo-256 addition uses EE PADDB. This is
 not enabled by default because it may be slower than generic C.
 
@@ -174,3 +174,19 @@ with only the `PADDB` helper replaced by its exact bytewise equivalent.
 It tests Sub1/Sub2/Average1/Average2 against independent scalar references,
 including 0..1024 byte rows, all 16 address alignments, and 16-byte
 post-row canaries. Run with `make -f ps2/Makefile.host test`.
+
+## Paeth1/Paeth2 and standalone EE harness coverage
+
+The existing packed Paeth implementation now includes bpp=1 and bpp=2
+wrappers. They remain under `PNG_PS2_EE_MMI_PAETH` because the exact
+scalar predictor may dominate execution time; `PADDB` handles only the
+per-pixel modulo-256 addition. The host Paeth test checks 1, 2, 3 and
+4-byte pixels. The EE harness exercises seven default filters, two optional
+gray Average filters and four optional Paeth filters. Enable both opt-ins:
+
+```sh
+make -C ps2 clean
+make -C ps2 EE_OPTFLAGS="-O2 -DPNG_PS2_EE_MMI_GRAY_AVG -DPNG_PS2_EE_MMI_PAETH"
+```
+
+Use actual hardware or an EE emulator to test the instruction paths.

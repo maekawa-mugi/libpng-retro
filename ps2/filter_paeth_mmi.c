@@ -102,6 +102,20 @@ png_ps2_paeth_filter(png_row_info *row_info, png_byte *row,
 }
 
 static void
+png_read_filter_row_paeth1_ps2(png_row_info *row_info, png_byte *row,
+    const png_byte *prev_row)
+{
+   png_ps2_paeth_filter(row_info, row, prev_row, 1);
+}
+
+static void
+png_read_filter_row_paeth2_ps2(png_row_info *row_info, png_byte *row,
+    const png_byte *prev_row)
+{
+   png_ps2_paeth_filter(row_info, row, prev_row, 2);
+}
+
+static void
 png_read_filter_row_paeth3_ps2(png_row_info *row_info, png_byte *row,
     const png_byte *prev_row)
 {

@@ -56,7 +56,7 @@ int main(void)
    unsigned int offset, bpp, repeat;
    unsigned long cases = 0;
    for (repeat = 0; repeat < 3; ++repeat)
-      for (bpp = 3; bpp <= 4; ++bpp)
+      for (bpp = 1; bpp <= 4; ++bpp)
          for (offset = 0; offset < 16; ++offset)
             for (n = 0; n <= NMAX; ++n)
             {
@@ -72,7 +72,11 @@ int main(void)
                memcpy(saved_above, prev, n + 16);
                ri.rowbytes = n;
                reference(expected, prev, n, bpp);
-               if (bpp == 3)
+               if (bpp == 1)
+                  png_read_filter_row_paeth1_ps2(&ri, row, prev);
+               else if (bpp == 2)
+                  png_read_filter_row_paeth2_ps2(&ri, row, prev);
+               else if (bpp == 3)
                   png_read_filter_row_paeth3_ps2(&ri, row, prev);
                else
                   png_read_filter_row_paeth4_ps2(&ri, row, prev);
