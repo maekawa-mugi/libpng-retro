@@ -3,10 +3,10 @@
 # Use: sh ps2/build_filter_variants.sh [one|all|matrix]
 # PCCR is privileged EE-only; PS2 Linux userspace must not enable it.
 set -eu
-: "\${PS2SDK:?Set PS2SDK and source your PS2SDK environment first}"
+: "${PS2SDK:?Set PS2SDK and source your PS2SDK environment first}"
 
-out=\${PNG_PS2_VARIANTS_DIR:-ps2/variant-elfs}
-mode=\${1:-all}
+out=${PNG_PS2_VARIANTS_DIR:-ps2/variant-elfs}
+mode=${1:-all}
 mkdir -p "$out"
 
 build_variant()
@@ -18,7 +18,7 @@ build_variant()
     do
         flags="$flags -D$opt"
     done
-    if [ "\${PNG_PS2_BENCH_USE_PCCR:-0}" = 1 ]; then
+    if [ "${PNG_PS2_BENCH_USE_PCCR:-0}" = 1 ]; then
         case " $flags " in
             *" PNG_PS2_BENCH_ENABLE "*) flags="$flags -DPNG_PS2_BENCH_EE_PCCR" ;;
         esac
