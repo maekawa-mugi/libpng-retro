@@ -12,6 +12,10 @@
 #define PS2_BENCH_UP    1U
 #define PS2_BENCH_AVG   2U
 #define PS2_BENCH_PAETH 3U
+#define PS2_BENCH_WRITE_UP    4U
+#define PS2_BENCH_WRITE_SUB4  5U
+#define PS2_BENCH_WRITE_AVG4  6U
+#define PS2_BENCH_WRITE_PAETH 7U
 #define PS2_BENCH_CAP   (1024U + 64U)
 
 typedef void (*ps2_bench_fn)(png_row_info *, png_byte *, const png_byte *);
@@ -95,6 +99,26 @@ static void
 ps2_bench_scalar(png_row_info *ri, png_byte *row, const png_byte *prev)
 {
    size_t i;
+   /* Encoding kernels operate in reverse so their left predictor is
+    * the original row data rather than previously written residuals. */
+   if (ps2_bench_filter >= PS2_BENCH_WRITE_UP)
+   {
+      for (i = ri->rowbytes; i-- > 0;)
+      {
+         unsigned int a = i >= ps2_bench_bpp ?
+             row[i - ps2_bench_bpp] : 0;
+         unsigned int b = prev[i];
+         unsigned int c = i >= ps2_bench_bpp ?
+             prev[i - ps2_bench_bpp] : 0;
+         unsigned int predictor =
+             ps2_bench_filter == PS2_BENCH_WRITE_UP ? b :
+             ps2_bench_filter == PS2_BENCH_WRITE_SUB4 ? a :
+             ps2_bench_filter == PS2_BENCH_WRITE_AVG4 ? (a + b) >> 1 :
+             ps2_bench_paeth(a, b, c);
+         row[i] = (png_byte)((unsigned int)row[i] - predictor);
+      }
+      return;
+   }
    for (i = 0; i < ri->rowbytes; ++i)
    {
       unsigned int a = i >= ps2_bench_bpp ? row[i - ps2_bench_bpp] : 0;
@@ -177,6 +201,10 @@ ps2_bench_sub8_packed(png_row_info *ri, png_byte *row, const png_byte *prev)
 }
 
 static const ps2_bench_variant ps2_bench_variants[] = {
+   {"write-up-mmi", 1, PS2_BENCH_WRITE_UP, 1, png_ps2_write_up_mmi},
+   {"write-sub4-mmi", 4, PS2_BENCH_WRITE_SUB4, 1, png_ps2_write_sub4_mmi},
+   {"write-avg4-mmi", 4, PS2_BENCH_WRITE_AVG4, 1, png_ps2_write_avg4_mmi},
+   {"write-paeth4-mmi", 4, PS2_BENCH_WRITE_PAETH, 1, png_ps2_write_paeth4_mmi},
    {"up-mmi", 1, PS2_BENCH_UP, 1, png_read_filter_row_up_ps2},
    {"sub1", 1, PS2_BENCH_SUB, 1, png_read_filter_row_sub1_ps2},
    {"sub2", 2, PS2_BENCH_SUB, 1, png_read_filter_row_sub2_ps2},
