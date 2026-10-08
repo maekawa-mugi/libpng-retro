@@ -17,7 +17,8 @@
 #define PS2_BENCH_WRITE_AVG4  6U
 #define PS2_BENCH_WRITE_PAETH 7U
 #define PS2_BENCH_PALETTE     8U
-#define PS2_BENCH_CAP   (4U * 1024U + 64U)
+#define PS2_BENCH_ROW_MAX 16384U
+#define PS2_BENCH_CAP   (4U * PS2_BENCH_ROW_MAX + 64U)
 
 typedef void (*ps2_bench_fn)(png_row_info *, png_byte *, const png_byte *);
 typedef struct {
@@ -316,8 +317,8 @@ ps2_bench_best(ps2_bench_fn fn, png_row_info *ri, png_byte *dst,
 static int
 png_ps2_bench_all(void)
 {
-   static const unsigned int widths[] = {32, 64, 128, 256, 1024};
-   static const unsigned int offsets[] = {0, 1, 8, 15};
+   static const unsigned int widths[] = {32, 64, 128, 256, 1024, 4096, 16384};
+   static const unsigned int offsets[] = {0, 1, 3, 4, 8, 12, 15};
    unsigned int index, wi, oi, j, fails = 0, successes = 0;
    png_byte *src = aligned16(ps2_bench_source);
    png_byte *dst = aligned16(ps2_bench_row);
