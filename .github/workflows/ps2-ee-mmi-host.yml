@@ -1,0 +1,39 @@
+name: PS2 EE MMI host regressions
+
+on:
+  push:
+    branches:
+      - eemmi
+    paths:
+      - "ps2/**"
+      - ".github/workflows/ps2-ee-mmi-host.yml"
+  pull_request:
+    paths:
+      - "ps2/**"
+      - ".github/workflows/ps2-ee-mmi-host.yml"
+  workflow_dispatch:
+
+jobs:
+  portable-tests:
+    name: "Host arithmetic and memory safety (${{ matrix.compiler }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run portable regressions
+        run: make -f ps2/Makefile.host test CC=${{ matrix.compiler }}
+      - name: Clean
+        run: make -f ps2/Makefile.host clean
+
+  sanitizers:
+    name: "Host GCC ASan/UBSan"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run source-level tests with sanitizers
+        run: |
+          make -f ps2/Makefile.host test CC=gcc \
+            CFLAGS="-O1 -g -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer"
