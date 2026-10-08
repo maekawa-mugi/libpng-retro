@@ -44,7 +44,7 @@ png_read_filter_row_sub3_prefix_ps2(png_byte *row, size_t rowbytes)
       memcpy(lanes, ptr, sizeof lanes);
       for (j = 0; j < 3; ++j)
          lanes[j] = (png_byte)((unsigned int)lanes[j] +
-             (unsigned int)ptr[j - 3]);
+             (unsigned int)ptr[(int)j - 3]);
       for (stage = 3; stage <= 12; stage *= 2)
          for (j = 16; j-- > stage;)
             lanes[j] = (png_byte)((unsigned int)lanes[j] +
