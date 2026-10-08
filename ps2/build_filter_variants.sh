@@ -24,19 +24,34 @@ build_variant()
     cp ps2/test_filter_mmi.elf "$out/$name.elf"
 }
 
-# All three prefix implementations are separate binary switches.
-# The full power set is built to detect interactions between optional
-# paths, in addition to testing each one against the default path.
-build_variant baseline
-build_variant sub3 PNG_PS2_EE_MMI_SUB3_PREFIX
-build_variant gray PNG_PS2_EE_MMI_GRAY_PREFIX16
-build_variant sub4 PNG_PS2_EE_MMI_SUB4_PREFIX
-build_variant sub3-gray PNG_PS2_EE_MMI_SUB3_PREFIX PNG_PS2_EE_MMI_GRAY_PREFIX16
-build_variant sub3-sub4 PNG_PS2_EE_MMI_SUB3_PREFIX PNG_PS2_EE_MMI_SUB4_PREFIX
-build_variant gray-sub4 PNG_PS2_EE_MMI_GRAY_PREFIX16 PNG_PS2_EE_MMI_SUB4_PREFIX
-build_variant all-prefix PNG_PS2_EE_MMI_SUB3_PREFIX PNG_PS2_EE_MMI_GRAY_PREFIX16 PNG_PS2_EE_MMI_SUB4_PREFIX
+# Four independent opt-in prefix implementations: Sub3, gray Sub1/Sub2,
+# Sub4, and Sub8.  Generate all 2^4 combinations so integration mistakes
+# in simultaneous SA-using kernels are visible in the EE test harness.
+mask=0
+while [ "$mask" -lt 16 ]
+do
+    set --
+    if [ $((mask & 1)) -ne 0 ]; then
+        set -- "$@" PNG_PS2_EE_MMI_SUB3_PREFIX
+    fi
+    if [ $((mask & 2)) -ne 0 ]; then
+        set -- "$@" PNG_PS2_EE_MMI_GRAY_PREFIX16
+    fi
+    if [ $((mask & 4)) -ne 0 ]; then
+        set -- "$@" PNG_PS2_EE_MMI_SUB4_PREFIX
+    fi
+    if [ $((mask & 8)) -ne 0 ]; then
+        set -- "$@" PNG_PS2_EE_MMI_SUB8_PREFIX16
+    fi
+    build_variant "mask-$mask" "$@"
+    mask=$((mask + 1))
+done
 
-# Include the other optional filters in a stress-test combination.
-build_variant all-optional PNG_PS2_EE_MMI_SUB3_PREFIX PNG_PS2_EE_MMI_GRAY_PREFIX16 PNG_PS2_EE_MMI_SUB4_PREFIX PNG_PS2_EE_MMI_GRAY_AVG PNG_PS2_EE_MMI_WIDE_AVG PNG_PS2_EE_MMI_PAETH
+# Compare the third Sub8 implementation, two directly loaded word lanes.
+build_variant sub8-words PNG_PS2_EE_MMI_SUB8_WORDS
 
-printf '\nBuilt 9 variants in %s. Run each ELF on PS2/PCSX2 and compare PASS counts.\n' "$out"
+# Stress the precedence of both Sub8 opt-ins plus optional Average/Paeth.
+# PREFIX16 takes precedence at >=64 bytes; WORDS handles 32..63 bytes.
+build_variant all-optional PNG_PS2_EE_MMI_SUB3_PREFIX PNG_PS2_EE_MMI_GRAY_PREFIX16 PNG_PS2_EE_MMI_SUB4_PREFIX PNG_PS2_EE_MMI_SUB8_PREFIX16 PNG_PS2_EE_MMI_SUB8_WORDS PNG_PS2_EE_MMI_GRAY_AVG PNG_PS2_EE_MMI_WIDE_AVG PNG_PS2_EE_MMI_PAETH
+
+printf '\\nBuilt 18 variants in %s. Run every ELF on EE/PCSX2 and compare PASS counts.\\n' "$out"
