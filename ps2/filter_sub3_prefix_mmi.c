@@ -77,6 +77,8 @@ png_read_filter_row_sub3_prefix_ps2(png_byte *row, size_t rowbytes)
       "sll   $12, $12, 16\n\t"
       "or    $10, $10, $11\n\t"
       "or    $10, $10, $12\n\t"
+      /* Scalar LBU/OR only define the low 64 bits on R5900. */
+      "pcpyld $10, $zero, $10\n\t"
       "paddb $8, $8, $10\n\t"
       /* QFSRV with SA=13 shifts the low vector left by three bytes. */
       "mtsab $zero, 13\n\t"
