@@ -20,7 +20,6 @@ typedef struct png_row_info_test_struct
 
 static png_byte row_storage[BUF_SIZE];
 static png_byte prev_storage[BUF_SIZE];
-static png_byte original[BUF_SIZE];
 static png_byte expected[BUF_SIZE];
 static png_byte prev_original[BUF_SIZE];
 static unsigned int rng_state = 0x735a2dc1U;
@@ -81,7 +80,6 @@ main(void)
                prev[i] = random_byte();
             }
 
-            memcpy(original, row, len + 1);
             memcpy(expected, row, len + 1);
             memcpy(prev_original, prev, len + 1);
             row_info.rowbytes = len;
