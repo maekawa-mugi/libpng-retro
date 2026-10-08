@@ -86,6 +86,39 @@ reference_avg4(png_byte *row, const png_byte *prev, size_t n)
    }
 }
 
+#ifdef PNG_PS2_EE_MMI_PAETH
+static unsigned int
+paeth_abs_test(int value)
+{
+   return (unsigned int)(value < 0 ? -value : value);
+}
+static unsigned int
+paeth_predict_test(unsigned int a, unsigned int b, unsigned int c)
+{
+   int p = (int)a + (int)b - (int)c;
+   unsigned int da = paeth_abs_test(p - (int)a);
+   unsigned int db = paeth_abs_test(p - (int)b);
+   unsigned int dc = paeth_abs_test(p - (int)c);
+   if (da <= db && da <= dc) return a;
+   if (db <= dc) return b;
+   return c;
+}
+static void
+reference_paeth(png_byte *row, const png_byte *prev, size_t n,
+    unsigned int bpp)
+{
+   size_t i;
+   for (i = 0; i < n; ++i)
+   {
+      unsigned int a = i >= bpp ? row[i - bpp] : 0;
+      unsigned int b = prev[i];
+      unsigned int c = i >= bpp ? prev[i - bpp] : 0;
+      row[i] = (png_byte)((unsigned int)row[i] +
+          paeth_predict_test(a, b, c));
+   }
+}
+#endif /* PNG_PS2_EE_MMI_PAETH */
+
 int
 main(void)
 {
@@ -94,7 +127,13 @@ main(void)
    size_t len;
    unsigned int cases = 0;
 
-   for (filter = 0; filter < 5; ++filter)
+   for (filter = 0; filter <
+#ifdef PNG_PS2_EE_MMI_PAETH
+         7
+#else
+         5
+#endif
+         ; ++filter)
    {
       for (offset = 0; offset < 16; ++offset)
       {
@@ -135,11 +174,23 @@ main(void)
                reference_sub3(expected, len);
                png_read_filter_row_sub3_ps2(&row_info, row, prev);
             }
-            else
+            else if (filter == 4)
             {
                reference_avg3(expected, prev, len);
                png_read_filter_row_avg3_ps2(&row_info, row, prev);
             }
+#ifdef PNG_PS2_EE_MMI_PAETH
+            else if (filter == 5)
+            {
+               reference_paeth(expected, prev, len, 3);
+               png_read_filter_row_paeth3_ps2(&row_info, row, prev);
+            }
+            else
+            {
+               reference_paeth(expected, prev, len, 4);
+               png_read_filter_row_paeth4_ps2(&row_info, row, prev);
+            }
+#endif
 
             if (memcmp(expected, row, len + 1) != 0 ||
                 memcmp(prev_original, prev, len + 1) != 0)
@@ -147,7 +198,9 @@ main(void)
                printf("FAIL: %s len=%lu offset=%u\n",
                    filter == 0 ? "Up" : (filter == 1 ? "Sub4" :
                        filter == 2 ? "Average4" :
-                       filter == 3 ? "Sub3" : "Average3"),
+                       filter == 3 ? "Sub3" :
+                       filter == 4 ? "Average3" :
+                       filter == 5 ? "Paeth3" : "Paeth4"),
                    (unsigned long)len, offset);
                return 1;
             }

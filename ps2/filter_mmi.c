@@ -229,3 +229,8 @@ png_read_filter_row_avg4_ps2(png_row_info *row_info, png_byte *row,
 
 /* Packed RGB8 (bpp=3) filters. */
 #include "filter_rgb3.c"
+
+/* Experimental packed Paeth read filters, enabled explicitly. */
+#ifdef PNG_PS2_EE_MMI_PAETH
+#include "filter_paeth_mmi.c"
+#endif
