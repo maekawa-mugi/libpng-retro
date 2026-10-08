@@ -7,7 +7,7 @@
 #   make -f ps2/Makefile.ee-linux EE_LINUX_CC=/path/to/ee-linux-gcc
 #
 # PCCR programming is intentionally NOT enabled: it is not safe from
-# ordinary Linux userspace.  Timing uses the C runtime clock() ticks.
+# ordinary Linux userspace. Timing uses gettimeofday microseconds.
 ifndef EE_LINUX_CC
 $(error Set EE_LINUX_CC to your PS2 Linux / R5900-capable C compiler)
 endif
@@ -17,7 +17,7 @@ EE_LINUX_CFLAGS ?= -O2 -Wall -Wextra
 EE_LINUX_LDFLAGS ?=
 EE_LINUX_LIBS ?=
 EE_LINUX_DEFINES ?= \
-  -DPNG_PS2_BENCH_ENABLE \
+  -DPNG_PS2_BENCH_ENABLE -DPNG_PS2_BENCH_POSIX_TIMER \
   -DPNG_PS2_EE_MMI_SUB3_PREFIX \
   -DPNG_PS2_EE_MMI_GRAY_PREFIX16 \
   -DPNG_PS2_EE_MMI_SUB4_PREFIX \
