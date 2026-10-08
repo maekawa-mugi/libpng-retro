@@ -74,6 +74,8 @@ test: ps2/test_up_host ps2/test_gray_host ps2/test_gray_prefix_host ps2/test_rgb
 	./ps2/test_wide_sub6_prefix_host
 	./ps2/test_avg4_dual_host
 	./ps2/test_mmi_models
+	python3 -m unittest discover -s ps2 -p test_analyze_bench.py
+	sh -n ps2/build_filter_variants.sh
 
 clean:
 	$(RM) ps2/test_wide_host ps2/test_wide_words_host ps2/test_wide_prefix_host ps2/test_wide_sub6_prefix_host ps2/test_wide_paeth_mask_host ps2/test_paeth_mask_host ps2/test_avg4_dual_host ps2/test_up_host ps2/test_gray_host ps2/test_gray_prefix_host ps2/test_rgb3_host ps2/test_rgb3_prefix_host ps2/test_paeth_host ps2/test_mmi_models
