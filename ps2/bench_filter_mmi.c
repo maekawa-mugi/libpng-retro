@@ -16,7 +16,8 @@
 #define PS2_BENCH_WRITE_SUB4  5U
 #define PS2_BENCH_WRITE_AVG4  6U
 #define PS2_BENCH_WRITE_PAETH 7U
-#define PS2_BENCH_CAP   (1024U + 64U)
+#define PS2_BENCH_PALETTE     8U
+#define PS2_BENCH_CAP   (4U * 1024U + 64U)
 
 typedef void (*ps2_bench_fn)(png_row_info *, png_byte *, const png_byte *);
 typedef struct {
@@ -30,6 +31,7 @@ static png_byte ps2_bench_row[PS2_BENCH_CAP];
 static png_byte ps2_bench_prev[PS2_BENCH_CAP];
 static png_byte ps2_bench_expect[PS2_BENCH_CAP];
 static png_byte ps2_bench_prev_save[PS2_BENCH_CAP];
+static png_byte ps2_bench_palette_table[1024];
 static volatile unsigned int ps2_bench_sink;
 static unsigned int ps2_bench_bpp, ps2_bench_filter;
 
@@ -99,6 +101,16 @@ static void
 ps2_bench_scalar(png_row_info *ri, png_byte *row, const png_byte *prev)
 {
    size_t i;
+   if (ps2_bench_filter == PS2_BENCH_PALETTE)
+   {
+      for (i = ri->rowbytes; i-- > 0;)
+      {
+         png_byte index = row[i];
+         memcpy(row + 4 * i,
+             ps2_bench_palette_table + 4 * (size_t)index, 4);
+      }
+      return;
+   }
    /* Encoding kernels operate in reverse so their left predictor is
     * the original row data rather than previously written residuals. */
    if (ps2_bench_filter >= PS2_BENCH_WRITE_UP)
@@ -200,11 +212,21 @@ ps2_bench_sub8_packed(png_row_info *ri, png_byte *row, const png_byte *prev)
    png_ps2_wide_sub(ri, row, prev, 8);
 }
 
+static void
+ps2_bench_palette_expand(png_row_info *ri, png_byte *row,
+    const png_byte *prev)
+{
+   (void)prev;
+   png_ps2_expand_palette_rgba4(row, row, ri->rowbytes,
+       ps2_bench_palette_table);
+}
+
 static const ps2_bench_variant ps2_bench_variants[] = {
    {"write-up-mmi", 1, PS2_BENCH_WRITE_UP, 1, png_ps2_write_up_mmi},
    {"write-sub4-mmi", 4, PS2_BENCH_WRITE_SUB4, 1, png_ps2_write_sub4_mmi},
    {"write-avg4-mmi", 4, PS2_BENCH_WRITE_AVG4, 1, png_ps2_write_avg4_mmi},
    {"write-paeth4-mmi", 4, PS2_BENCH_WRITE_PAETH, 1, png_ps2_write_paeth4_mmi},
+   {"palette-rgba4", 1, PS2_BENCH_PALETTE, 1, ps2_bench_palette_expand},
    {"up-mmi", 1, PS2_BENCH_UP, 1, png_read_filter_row_up_ps2},
    {"sub1", 1, PS2_BENCH_SUB, 1, png_read_filter_row_sub1_ps2},
    {"sub2", 2, PS2_BENCH_SUB, 1, png_read_filter_row_sub2_ps2},
@@ -308,6 +330,8 @@ png_ps2_bench_all(void)
    printf("BENCH_HEADER,variant,filter,bpp,rowbytes,row_align,prev_align,"
           "loops,copy_ticks,scalar_ticks,optimized_ticks,"
           "scalar_net_ticks,optimized_net_ticks,optimized_ticks_per_byte_x1000\n");
+   for (j = 0; j < 1024U; ++j)
+      ps2_bench_palette_table[j] = random_byte();
    ps2_bench_clock_init();
 
    for (index = 0; index < sizeof ps2_bench_variants /
@@ -360,10 +384,19 @@ png_ps2_bench_all(void)
             memcpy(q, p, n + 16);
             memcpy(e, s, n + 16);
             memcpy(r, s, n + 16);
+            if (v->filter == PS2_BENCH_PALETTE)
+            {
+               /* Expansion fills 4*n bytes.  Check the entire region
+                * and sixteen sentinel bytes after it. */
+               memset(e + n, 0xa5, 3 * n + 16);
+               memset(r + n, 0xa5, 3 * n + 16);
+            }
             ps2_bench_scalar(&ri, e, p);
             v->fn(&ri, r, p);
 
-            if (memcmp(e, r, n + 16) || memcmp(q, p, n + 16))
+            if (memcmp(e, r,
+                    (v->filter == PS2_BENCH_PALETTE ? 4 * n : n) + 16) ||
+                memcmp(q, p, n + 16))
             {
                ++fails;
                printf("BENCH_FAIL,%s,%u,%lu,%u\n", v->name,
