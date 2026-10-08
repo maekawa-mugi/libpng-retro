@@ -8,6 +8,7 @@
 #include <string.h>
 
 typedef unsigned char png_byte;
+typedef unsigned int png_uint_32;
 typedef struct png_row_info_test_struct
 {
    size_t rowbytes;
@@ -158,6 +159,28 @@ reference_avg2(png_byte *row, const png_byte *prev, size_t n)
 }
 #endif
 
+static void
+reference_wide_sub(png_byte *row, size_t n, unsigned int bpp)
+{
+   size_t i;
+   for (i = bpp; i < n; ++i)
+      row[i] = (png_byte)((unsigned int)row[i] + (unsigned int)row[i - bpp]);
+}
+#ifdef PNG_PS2_EE_MMI_WIDE_AVG
+static void
+reference_wide_avg(png_byte *row, const png_byte *prev, size_t n,
+    unsigned int bpp)
+{
+   size_t i;
+   for (i = 0; i < n; ++i)
+   {
+      unsigned int left = i >= bpp ? row[i - bpp] : 0;
+      row[i] = (png_byte)((unsigned int)row[i] +
+          ((left + (unsigned int)prev[i]) >> 1));
+   }
+}
+#endif
+
 #ifdef PNG_PS2_EE_MMI_GRAY_AVG
 #define PNG_PS2_TEST_GRAY_AVG_COUNT 2
 #else
@@ -169,7 +192,20 @@ reference_avg2(png_byte *row, const png_byte *prev, size_t n)
 #define PNG_PS2_TEST_PAETH_COUNT 0
 #endif
 #define PNG_PS2_TEST_PAETH_START (7 + PNG_PS2_TEST_GRAY_AVG_COUNT)
-#define PNG_PS2_TEST_TOTAL (PNG_PS2_TEST_PAETH_START + PNG_PS2_TEST_PAETH_COUNT)
+#define PNG_PS2_TEST_WIDE_SUB_START (PNG_PS2_TEST_PAETH_START + PNG_PS2_TEST_PAETH_COUNT)
+#ifdef PNG_PS2_EE_MMI_WIDE_AVG
+#define PNG_PS2_TEST_WIDE_AVG_COUNT 2
+#else
+#define PNG_PS2_TEST_WIDE_AVG_COUNT 0
+#endif
+#define PNG_PS2_TEST_WIDE_AVG_START (PNG_PS2_TEST_WIDE_SUB_START + 2)
+#define PNG_PS2_TEST_WIDE_PAETH_START (PNG_PS2_TEST_WIDE_AVG_START + PNG_PS2_TEST_WIDE_AVG_COUNT)
+#ifdef PNG_PS2_EE_MMI_PAETH
+#define PNG_PS2_TEST_WIDE_PAETH_COUNT 2
+#else
+#define PNG_PS2_TEST_WIDE_PAETH_COUNT 0
+#endif
+#define PNG_PS2_TEST_TOTAL (PNG_PS2_TEST_WIDE_PAETH_START + PNG_PS2_TEST_WIDE_PAETH_COUNT)
 
 int
 main(void)
@@ -190,14 +226,14 @@ main(void)
             png_byte *prev = aligned16(prev_storage) + ((offset * 7) & 15U);
             size_t i;
 
-            for (i = 0; i <= len; ++i)
+            for (i = 0; i < len + 16; ++i)
             {
-               row[i] = random_byte();
-               prev[i] = random_byte();
+               row[i] = i < len ? random_byte() : 0xa5;
+               prev[i] = i < len ? random_byte() : 0x5a;
             }
 
-            memcpy(expected, row, len + 1);
-            memcpy(prev_original, prev, len + 1);
+            memcpy(expected, row, len + 16);
+            memcpy(prev_original, prev, len + 16);
             row_info.rowbytes = len;
 
             if (filter == 0)
@@ -248,7 +284,7 @@ main(void)
             }
 #endif
 #ifdef PNG_PS2_EE_MMI_PAETH
-            else
+            else if (filter < PNG_PS2_TEST_WIDE_SUB_START)
             {
                unsigned int bpp = filter - PNG_PS2_TEST_PAETH_START + 1;
                reference_paeth(expected, prev, len, bpp);
@@ -262,9 +298,43 @@ main(void)
                   png_read_filter_row_paeth4_ps2(&row_info, row, prev);
             }
 #endif
+            else if (filter == PNG_PS2_TEST_WIDE_SUB_START)
+            {
+               reference_wide_sub(expected, len, 6);
+               png_read_filter_row_sub6_ps2(&row_info, row, prev);
+            }
+            else if (filter == PNG_PS2_TEST_WIDE_SUB_START + 1)
+            {
+               reference_wide_sub(expected, len, 8);
+               png_read_filter_row_sub8_ps2(&row_info, row, prev);
+            }
+#ifdef PNG_PS2_EE_MMI_WIDE_AVG
+            else if (filter == PNG_PS2_TEST_WIDE_AVG_START)
+            {
+               reference_wide_avg(expected, prev, len, 6);
+               png_read_filter_row_avg6_ps2(&row_info, row, prev);
+            }
+            else if (filter == PNG_PS2_TEST_WIDE_AVG_START + 1)
+            {
+               reference_wide_avg(expected, prev, len, 8);
+               png_read_filter_row_avg8_ps2(&row_info, row, prev);
+            }
+#endif
+#ifdef PNG_PS2_EE_MMI_PAETH
+            else if (filter == PNG_PS2_TEST_WIDE_PAETH_START)
+            {
+               reference_paeth(expected, prev, len, 6);
+               png_read_filter_row_paeth6_ps2(&row_info, row, prev);
+            }
+            else
+            {
+               reference_paeth(expected, prev, len, 8);
+               png_read_filter_row_paeth8_ps2(&row_info, row, prev);
+            }
+#endif
 
-            if (memcmp(expected, row, len + 1) != 0 ||
-                memcmp(prev_original, prev, len + 1) != 0)
+            if (memcmp(expected, row, len + 16) != 0 ||
+                memcmp(prev_original, prev, len + 16) != 0)
             {
                printf("FAIL: %s len=%lu offset=%u\n",
                    filter == 0 ? "Up" : filter == 1 ? "Sub4" :
@@ -275,9 +345,15 @@ main(void)
                        filter == 6 ? "Sub2" :
                        filter < PNG_PS2_TEST_PAETH_START ?
                           (filter == 7 ? "Average1" : "Average2") :
-                       filter == PNG_PS2_TEST_PAETH_START ? "Paeth1" :
-                       filter == PNG_PS2_TEST_PAETH_START + 1 ? "Paeth2" :
-                       filter == PNG_PS2_TEST_PAETH_START + 2 ? "Paeth3" : "Paeth4",
+                       filter < PNG_PS2_TEST_WIDE_SUB_START ?
+                          (filter == PNG_PS2_TEST_PAETH_START ? "Paeth1" :
+                           filter == PNG_PS2_TEST_PAETH_START + 1 ? "Paeth2" :
+                           filter == PNG_PS2_TEST_PAETH_START + 2 ? "Paeth3" : "Paeth4") :
+                       filter == PNG_PS2_TEST_WIDE_SUB_START ? "Sub6" :
+                       filter == PNG_PS2_TEST_WIDE_SUB_START + 1 ? "Sub8" :
+                       filter == PNG_PS2_TEST_WIDE_AVG_START ? "Average6" :
+                       filter == PNG_PS2_TEST_WIDE_AVG_START + 1 ? "Average8" :
+                       filter == PNG_PS2_TEST_WIDE_PAETH_START ? "Paeth6" : "Paeth8",
                    (unsigned long)len, offset);
                return 1;
             }

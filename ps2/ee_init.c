@@ -44,6 +44,20 @@ png_init_filter_functions_ps2(png_struct *pp, unsigned int bpp)
           png_read_filter_row_paeth3_ps2;
 #endif
    }
+   else if (bpp == 6 || bpp == 8)
+   {
+      pp->read_filter[PNG_FILTER_VALUE_SUB-1] =
+          bpp == 6 ? png_read_filter_row_sub6_ps2 : png_read_filter_row_sub8_ps2;
+#ifdef PNG_PS2_EE_MMI_WIDE_AVG
+      pp->read_filter[PNG_FILTER_VALUE_AVG-1] =
+          bpp == 6 ? png_read_filter_row_avg6_ps2 : png_read_filter_row_avg8_ps2;
+#endif
+#ifdef PNG_PS2_EE_MMI_PAETH
+      pp->read_filter[PNG_FILTER_VALUE_PAETH-1] =
+          bpp == 6 ? png_read_filter_row_paeth6_ps2 :
+              png_read_filter_row_paeth8_ps2;
+#endif
+   }
 }
 
 #define png_target_init_filter_functions_impl png_init_filter_functions_ps2

@@ -33,9 +33,15 @@ or `filter_mmi.c`, since `pngsimd.c` includes the backend through
 | Up, all byte-per-pixel sizes | 16-byte EE MMI LQ / PADDB / SQ, scalar tail |
 | Sub, 4 bytes per pixel | 4-byte packed EE MMI PADDB; optional 16-byte prefix scan |
 | Average, 4 bytes per pixel | Exact packed 4-byte mean + EE MMI PADDB |
-| Sub, 3 bytes per pixel | Three packed byte lanes with EE MMI PADDB |\n| Sub, 1/2 bytes per pixel | Four-byte prefix scan via EE PADDB, bytewise tails |
+| Sub, 3 bytes per pixel | Three packed byte lanes with EE MMI PADDB |
+| Sub, 1/2 bytes per pixel | Four-byte prefix scan via EE PADDB, bytewise tails |
+| Sub, 6/8 bytes per pixel | Two packed PADDB groups (4+2 or 4+4) |
 | Sub, other byte-per-pixel sizes | Generic libpng C |
-| Average, 3 bytes per pixel | Exact three-lane packed average and EE MMI PADDB |\n| Paeth, 1/2/3/4 bytes per pixel | Optional packed MMI PADDB after exact scalar predictor |\n| Average, 1/2 bytes per pixel | Experimental packed ADD, opt-in only |
+| Average, 3 bytes per pixel | Exact three-lane packed average and EE MMI PADDB |
+| Paeth, 1/2/3/4 bytes per pixel | Optional packed MMI PADDB after exact scalar predictor |
+| Average, 1/2 bytes per pixel | Experimental packed ADD, opt-in only |
+| Average, 6/8 bytes per pixel | Two packed PADDB groups, opt-in |
+| Paeth, 6/8 bytes per pixel | Exact bytewise predictor + packed PADDB, opt-in |
 | Average for other pixel sizes / Paeth otherwise | Generic libpng C |
 
 Define `PNG_PS2_EE_MMI_SUB4_PREFIX` to try an experimental 128-bit
@@ -215,3 +221,38 @@ Use `make -f ps2/Makefile.host syntax-ee-gcc` for an additional GCC
 syntax-only pass over the R5900 inline-assembly strings. Neither mode
 validates PS2 instruction assembly or runtime behavior; use PS2SDK and
 an EE target for that.
+
+## 16-bit RGB/RGBA: bytewise Sub6/Sub8, Average6/8 and Paeth6/8
+
+`filter_wide_mmi.c` handles 16-bit PNG RGB (six bytes per pixel) and RGBA
+(eight bytes per pixel). PNG filters operate independently on the **encoded
+bytes**, not 16-bit sample arithmetic. Each pixel is divided into 4+2 or
+4+4 byte groups and processed using EE `PADDB`. No unaligned word or
+quadword loads are used, so odd alignments and short rows are safe.
+
+Sub6/Sub8 are registered by default. Average6/Average8 require
+`PNG_PS2_EE_MMI_WIDE_AVG` and Paeth6/Paeth8 require the existing
+`PNG_PS2_EE_MMI_PAETH` opt-in. Both are experimental until cycle-level
+benchmarking on real EE hardware.
+
+`test_wide_host.c` compiles the production implementation with a portable
+replacement for `PADDB`; it compares each byte against independent
+Sub, Average and Paeth scalar references across lengths 0..1024 and
+16 row alignments, with input-preservation and out-of-row canaries.
+
+Build and run all host tests:
+
+```sh
+make -f ps2/Makefile.host test
+```
+
+Exercise the actual EE MMI instruction paths, including every opt-in,
+in the standalone PS2SDK harness:
+
+```sh
+make -C ps2 clean
+make -C ps2 EE_OPTFLAGS="-O2 -DPNG_PS2_EE_MMI_GRAY_AVG -DPNG_PS2_EE_MMI_WIDE_AVG -DPNG_PS2_EE_MMI_PAETH"
+```
+
+Cross-compilation and real EE hardware execution are still required
+before this backend can be considered hardware-validated.
