@@ -7,6 +7,9 @@
  * SPDX-License-Identifier: libpng-2.0
  */
 #include <time.h>
+#if defined(PNG_PS2_BENCH_EE_PCCR) && defined(PNG_PS2_BENCH_POSIX_TIMER)
+#error Choose only one EE benchmark timer source
+#endif
 
 #define PS2_BENCH_SUB   0U
 #define PS2_BENCH_UP    1U
@@ -74,6 +77,25 @@ ps2_bench_clock_done(void)
    __asm__ volatile ("mtps %0, 0" : : "r"(ps2_bench_old_pccr) : "memory");
 }
 #define PS2_BENCH_UNIT "ee_cycles"
+#elif defined(PNG_PS2_BENCH_POSIX_TIMER)
+/* Unprivileged PS2 Linux option: wall-clock microseconds, not CPU cycles.
+ * Kernel scheduling may add noise; the harness repeats measurements.
+ * Old Linux libc offers gettimeofday even if clock_gettime is absent.
+ */
+#include <sys/time.h>
+static void ps2_bench_clock_init(void) {}
+static void ps2_bench_clock_done(void) {}
+static unsigned long ps2_bench_now(void)
+{
+   struct timeval tv;
+   if (gettimeofday(&tv, 0) != 0)
+      return 0;
+   return (unsigned long)tv.tv_sec * 1000000UL +
+       (unsigned long)tv.tv_usec;
+}
+static unsigned long ps2_bench_delta(unsigned long a, unsigned long b)
+{ return b - a; }
+#define PS2_BENCH_UNIT "microseconds"
 #else
 static void ps2_bench_clock_init(void) {}
 static void ps2_bench_clock_done(void) {}
