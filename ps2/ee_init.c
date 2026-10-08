@@ -18,6 +18,11 @@ png_init_filter_functions_ps2(png_struct *pp, unsigned int bpp)
       pp->read_filter[PNG_FILTER_VALUE_SUB-1] = png_read_filter_row_sub4_ps2;
       pp->read_filter[PNG_FILTER_VALUE_AVG-1] = png_read_filter_row_avg4_ps2;
    }
+   else if (bpp == 3)
+   {
+      pp->read_filter[PNG_FILTER_VALUE_SUB-1] = png_read_filter_row_sub3_ps2;
+      pp->read_filter[PNG_FILTER_VALUE_AVG-1] = png_read_filter_row_avg3_ps2;
+   }
 }
 
 #define png_target_init_filter_functions_impl png_init_filter_functions_ps2

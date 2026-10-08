@@ -226,3 +226,6 @@ png_read_filter_row_avg4_ps2(png_row_info *row_info, png_byte *row,
       row[i] = (png_byte)((unsigned int)row[i] + ((left + above) >> 1));
    }
 }
+
+/* Packed RGB8 (bpp=3) filters. */
+#include "filter_rgb3.c"

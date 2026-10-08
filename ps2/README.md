@@ -33,8 +33,8 @@ or `filter_mmi.c`, since `pngsimd.c` includes the backend through
 | Up, all byte-per-pixel sizes | 16-byte EE MMI LQ / PADDB / SQ, scalar tail |
 | Sub, 4 bytes per pixel | 4-byte packed EE MMI PADDB; optional 16-byte prefix scan |
 | Average, 4 bytes per pixel | Exact packed 4-byte mean + EE MMI PADDB |
-| Sub, other byte-per-pixel sizes | Generic libpng C |
-| Average for other pixel sizes / Paeth | Generic libpng C |
+| Sub, 3 bytes per pixel | Three packed byte lanes with EE MMI PADDB |\n| Sub, other byte-per-pixel sizes | Generic libpng C |
+| Average, 3 bytes per pixel | Exact three-lane packed average and EE MMI PADDB |\n| Average for other pixel sizes / Paeth | Generic libpng C |
 
 Define `PNG_PS2_EE_MMI_SUB4_PREFIX` to try an experimental 128-bit
 Sub4 prefix scan using QFSRV, PADDB, PEXTLW and PCPYLD. This is opt-in
@@ -58,7 +58,7 @@ prefix-sum implementation could replace it after profiling.
 `filter_mmi.c` with minimal compatible type definitions.  Compile it
 as an EE program with the PS2SDK toolchain and run it on hardware or in
 an emulator.  It exercises lengths 0..1024 and 16 possible input
-alignments for Up, Sub4 and Average4, checking against independent scalar
+alignments for Up, Sub4, Average4, Sub3 and Average3, checking against independent scalar
 reference functions, checking input preservation and output bounds.
 
 Also test with real PNGs (using libpng's `pngtest` or your application's
@@ -112,3 +112,21 @@ make -C ps2 EE_OPTFLAGS="-O2 -DPNG_PS2_EE_MMI_SUB4_PREFIX"
 
 The regular build covers Up, Sub4 and Average4; rebuilding with this
 flag also exercises QFSRV and the SA register save/restore sequence.
+
+## RGB8 Sub3 and Average3 regression tests
+
+The production `filter_rgb3.c` contains the RGB8 read-filter loops and the
+EE `PADDB` helper.  The standalone host test compiles **the same filter loops**
+with only the single MMI instruction replaced by the equivalent scalar
+three-byte-lane operation. It checks byte-exact output, previous-row
+preservation, and 16 sentinel bytes beyond each row for 0..1024-byte rows,
+all 16 alignments, and repeated pseudorandom inputs:
+
+```sh
+make -f ps2/Makefile.host test
+```
+
+This checks RGB3 logic and buffer safety on the host, but **does not verify
+R5900 instruction encoding, scheduling, or speed**. The RGB3 packed path may
+or may not outperform the generic C code; benchmark on EE before calling
+it a performance improvement.
