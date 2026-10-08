@@ -32,6 +32,21 @@ png_ps2_extra_align16(png_byte *p)
    return p + ((16U - ((size_t)p & 15U)) & 15U);
 }
 
+/* Independent reference based on p=a+b-c, rather than the optimized
+ * kernel's simplified distance expressions; tie precedence is a,b,c. */
+static unsigned int
+png_ps2_extra_paeth_ref(unsigned int a, unsigned int b, unsigned int c)
+{
+   int p = (int)a + (int)b - (int)c;
+   int da = p - (int)a, db = p - (int)b, dc = p - (int)c;
+   da = da < 0 ? -da : da;
+   db = db < 0 ? -db : db;
+   dc = dc < 0 ? -dc : dc;
+   if (da <= db && da <= dc) return a;
+   if (db <= dc) return b;
+   return c;
+}
+
 static void
 png_ps2_extra_write_reference(png_byte *row, const png_byte *prev,
     size_t n, unsigned int filter)
@@ -45,7 +60,7 @@ png_ps2_extra_write_reference(png_byte *row, const png_byte *prev,
       unsigned int predictor = filter == 0 ? above :
           filter == 1 ? left :
           filter == 2 ? (left + above) >> 1 :
-          png_ps2_extra_paeth(left, above, upper_left);
+          png_ps2_extra_paeth_ref(left, above, upper_left);
       row[i] = (png_byte)((unsigned int)row[i] - predictor);
    }
 }
