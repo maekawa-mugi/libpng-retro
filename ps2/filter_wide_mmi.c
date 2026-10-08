@@ -109,6 +109,10 @@ png_ps2_wide_sub8_words(png_byte *row, size_t n)
 #include "filter_sub8_prefix_mmi.c"
 #endif
 
+#if defined(PNG_PS2_EE_MMI_SUB6_PREFIX16)
+#include "filter_sub6_prefix_mmi.c"
+#endif
+
 /* bpp=6 uses a 4+2 layout; bpp=8 uses 4+4. For each pixel,
  * decoded[i] = (raw[i] + decoded[i-bpp]) mod 256 independently.
  */
@@ -139,6 +143,10 @@ static void
 png_read_filter_row_sub6_ps2(png_row_info *row_info, png_byte *row,
     const png_byte *prev_row)
 {
+#if defined(PNG_PS2_EE_MMI_SUB6_PREFIX16)
+   if (png_ps2_wide_sub6_prefix16(row, row_info->rowbytes))
+      return;
+#endif
    png_ps2_wide_sub(row_info, row, prev_row, 6);
 }
 
