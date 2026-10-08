@@ -145,7 +145,8 @@ included here as opt-ins.** Define `PNG_PS2_EE_MMI_UP_2X` to use the
 two-vector Up loop, or `PNG_PS2_EE_MMI_SUB4_UNROLL4` for a four-pixel
 Sub4 word loop when the Sub4 prefix candidate did not handle that row.
 The all-in-one benchmark directly times the unrolled functions and
-the original Sub3/Sub6/Sub8 packed baselines. No default is switched
+original packed Sub1/Sub2/Sub3/Sub4/Sub6/Sub8 and Average4 baselines
+via a separate benchmark-only source snapshot. No default is switched
 without actual EE speed and correctness evidence.
 
 **Additional independent kernels**: `extra_kernels_mmi.c` contains
