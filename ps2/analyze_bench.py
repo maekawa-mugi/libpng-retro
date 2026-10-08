@@ -91,8 +91,12 @@ def parse(lines: list[str]) -> tuple[list[Sample], list[str], dict[str, int], st
 def analyze(lines: list[str], top: int = 20) -> tuple[int, list[Sample]]:
     samples, issues, statuses, timer, _ = parse(lines)
     print(f"Timer source: {timer}")
-    if timer != "ee_cycles":
-        print("NOTE: timer output is CLOCK TICKS, not measured EE CPU cycles.")
+    if timer == "clock_ticks":
+        print("NOTE: clock() units are CLOCK TICKS, not EE CPU cycles.")
+    elif timer == "microseconds":
+        print("NOTE: gettimeofday reports wall-clock microseconds, not EE CPU cycles.")
+    elif timer != "ee_cycles":
+        print("NOTE: unknown timer source; do not treat the result as CPU cycles.")
     print(
         f"Correctness PASS lines: {statuses['correctness_pass_lines']}; "
         f"extra PASS lines: {statuses['extra_pass_lines']}; "
