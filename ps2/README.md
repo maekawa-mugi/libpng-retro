@@ -110,10 +110,9 @@ make -f ps2/Makefile.ee-linux \
 Copy and run `ps2/test_filter_mmi.ee-linux` on the PS2 Linux system,
 capturing its console output. Keep `PNG_PS2_BENCH_EE_PCCR` **disabled**
 for Linux userspace: programming EE performance-counter control registers
-may require privileged execution. The default `clock()` implementation
-records C library **clock ticks, not raw EE cycles**. If the clock is
-unimplemented and returns all zeroes, do not interpret the CSV as a speed
-measurement.
+may require privileged execution. The Linux build uses `gettimeofday` and records **wall-clock microseconds, not EE cycles**. Bare-metal PS2SDK builds without PCCR use
+`clock()` ticks, which may not be implemented by every SDK. If the chosen timer is unimplemented or returns all zeroes, do not
+interpret the CSV as a valid speed measurement.
 
 On a *privileged bare-metal EE* environment only, optionally request
 PCCR0 processor-cycle counts:
