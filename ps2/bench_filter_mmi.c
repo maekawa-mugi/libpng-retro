@@ -251,6 +251,13 @@ static const ps2_bench_variant ps2_bench_variants[] = {
    {"write-paeth4-mmi", 4, PS2_BENCH_WRITE_PAETH, 1, png_ps2_write_paeth4_mmi},
    {"palette-rgba4", 1, PS2_BENCH_PALETTE, 1, ps2_bench_palette_expand},
    {"up-mmi", 1, PS2_BENCH_UP, 1, png_read_filter_row_up_ps2},
+#ifdef PNG_PS2_EE_MMI_UP_2X
+   {"up-2x-direct", 1, PS2_BENCH_UP, 16, png_read_filter_row_up_2x_ps2},
+#endif
+#ifdef PNG_PS2_EE_MMI_SUB4_UNROLL4
+   {"sub4-unroll4-direct", 4, PS2_BENCH_SUB, 4,
+       png_read_filter_row_sub4_unroll4_ps2},
+#endif
    {"sub1", 1, PS2_BENCH_SUB, 1, png_read_filter_row_sub1_ps2},
    {"sub2", 2, PS2_BENCH_SUB, 1, png_read_filter_row_sub2_ps2},
    {"sub3", 3, PS2_BENCH_SUB, 1, png_read_filter_row_sub3_ps2},
