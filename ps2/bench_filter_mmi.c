@@ -1091,6 +1091,15 @@ ps2_bench_validate_dispatch(void)
                       (unsigned long)n,align,win->name);
                }
             }
+   /* Do not claim the trained dispatcher has passed if clock resolution
+    * made every candidate ineligible. A correctness-only ELF may still
+    * pass, but no dispatch speed choice has been validated. */
+   if (cases == 0U && fails == 0U)
+   {
+      ps2_bench_dispatch_passed=ps2_bench_dispatch_failed=0U;
+      printf("DISPATCH_NA,cases=0,reason=no-valid-measured-winner\n");
+      return 0;
+   }
    /* Some selector-policy invariants do not execute a measured row.
     * Keep their failures separate to avoid unsigned underflow in counts. */
    ps2_bench_dispatch_passed=cases >= fails ? cases-fails : 0U;
