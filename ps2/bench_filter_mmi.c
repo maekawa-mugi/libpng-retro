@@ -84,6 +84,7 @@ typedef struct
    const char *name;
    unsigned long net_ticks, reference_ticks;
    unsigned int eligible;
+   unsigned int plan_index;
 } ps2_bench_winner;
 static ps2_bench_winner ps2_bench_winners[PS2_WIN_FILTERS]
     [PS2_WIN_BPPS][PS2_WIN_WIDTHS][PS2_WIN_ALIGNS];
@@ -91,7 +92,7 @@ static unsigned int ps2_bench_winner_cases, ps2_bench_winner_groups;
 static void
 ps2_bench_consider(const char *name, unsigned int filter, unsigned int bpp,
     size_t n, unsigned int align, unsigned long candidate,
-    unsigned long reference)
+    unsigned long reference, unsigned int plan_index)
 {
    unsigned int width_index;
    ps2_bench_winner *best;
@@ -109,6 +110,7 @@ ps2_bench_consider(const char *name, unsigned int filter, unsigned int bpp,
       best->name = name;
       best->net_ticks = candidate;
       best->reference_ticks = reference;
+      best->plan_index = plan_index;
    }
 }
 static void
@@ -118,6 +120,8 @@ ps2_bench_print_winners(void)
    unsigned int f, b, w, a;
    printf("FASTEST_HEADER,filter,bpp,rowbytes,alignment,winner,"
        "net_ticks,speedup_x1000,candidates\n");
+   printf("AUTO_WIN_HEADER,filter,bpp,rowbytes,alignment,result,plan,"
+       "candidate,scalar_ticks,plan_ticks,winning_ratio_x1000,plans\n");
    for (f = 0; f < PS2_WIN_FILTERS; ++f)
       for (b = 1; b < PS2_WIN_BPPS; ++b)
          for (w = 0; w < PS2_WIN_WIDTHS; ++w)
@@ -131,6 +135,21 @@ ps2_bench_print_winners(void)
                printf("FASTEST,%u,%u,%u,%u,%s,%lu,%lu,%u\n",f,b,
                    width_values[w],a,best->name,best->net_ticks,
                    speedup,best->eligible);
+               {
+                  enum ps2_bench_verdict verdict = ps2_bench_verdict(
+                      best->reference_ticks, best->net_ticks);
+                  const char *result = verdict == PS2_BENCH_PLAN_WIN ?
+                      "PLAN_WIN" : verdict == PS2_BENCH_SCALAR_WIN ?
+                      "SCALAR_WIN" : verdict == PS2_BENCH_TIE ?
+                      "TIE" : "N/A";
+                  unsigned long ratio = ps2_bench_winner_ratio_x1000(
+                      best->reference_ticks, best->net_ticks);
+                  printf("AUTO_WIN,%u,%u,%u,%u,%s,%c,%s,%lu,%lu,%lu,%u\n",
+                      f,b,width_values[w],a,result,
+                      ps2_bench_plan_letter(best->plan_index),best->name,
+                      best->reference_ticks,best->net_ticks,ratio,
+                      best->eligible);
+               }
                ++ps2_bench_winner_groups;
             }
    printf("FASTEST_DONE,groups=%u,comparisons=%u\n",
@@ -898,6 +917,13 @@ png_ps2_bench_all(void)
        sizeof ps2_bench_variants[0]; ++index)
    {
       const ps2_bench_variant *v = &ps2_bench_variants[index];
+      /* Stable plan labels per filter/bpp, independent of row width,
+       * pointer alignment or which paths become eligible on a row. */
+      unsigned int previous, plan_index = 0;
+      for (previous = 0; previous < index; ++previous)
+         if (ps2_bench_variants[previous].filter == v->filter &&
+             ps2_bench_variants[previous].bpp == v->bpp)
+            ++plan_index;
       PS2_BENCH_PROGRESS(v->name, index + 1,
           sizeof ps2_bench_variants / sizeof ps2_bench_variants[0],
           0, successes, fails);
@@ -1026,7 +1052,7 @@ png_ps2_bench_all(void)
             ps2_bench_ab_add(&ps2_bench_ab, copy_time, scalar_time,
                 candidate_time);
             ps2_bench_consider(v->name, v->filter, v->bpp, n,
-                offsets[oi], net_candidate, net_scalar);
+                offsets[oi], net_candidate, net_scalar, plan_index);
             scaled = ps2_bench_output_bytes && loops ?
                 (unsigned long)(((unsigned long long)net_candidate * 1000ULL) /
                     ((unsigned long long)ps2_bench_output_bytes * loops)) : 0;
