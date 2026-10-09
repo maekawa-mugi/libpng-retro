@@ -39,6 +39,27 @@ class BenchLogTests(unittest.TestCase):
         lines = self.valid + ["BENCH_FAIL,sub8,8,1024,1"]
         self.assertEqual(analyze(lines, top=0)[0], 1)
 
+    def test_fused_run_requires_matched_rows_and_completion(self):
+        lines = self.valid[4:-1] + ["FUSED_PASS,cases=2,variants=2", self.valid[-1]]
+        self.assertEqual(analyze(lines, top=0)[0], 0)
+        self.assertEqual(analyze(lines[:-1], top=0)[0], 1)
+        lines[-2] = "FUSED_PASS,cases=3,variants=2"
+        self.assertEqual(analyze(lines, top=0)[0], 1)
+
+    def test_empty_fused_pass_does_not_bypass_correctness(self):
+        lines = self.valid[4:-1] + ["FUSED_PASS,cases=0,variants=88", self.valid[-1]]
+        self.assertEqual(analyze(lines, top=0)[0], 1)
+
+    def test_explicit_ab_failure_never_passes(self):
+        self.assertEqual(analyze(self.valid + ["RESULT,A,X,B,X"],top=0)[0],1)
+        self.assertEqual(analyze(self.valid + ["A: X (1.000 ms)"],top=0)[0],1)
+        self.assertEqual(analyze(self.valid + ["B: X (1.000 ms)"],top=0)[0],1)
+
+    def test_winner_summary_must_finish(self):
+        head = "FASTEST_HEADER,filter,bpp,rowbytes,alignment,winner,net_ticks,speedup_x1000,candidates"
+        self.assertEqual(analyze(self.valid + [head],top=0)[0],1)
+        self.assertEqual(analyze(self.valid + [head,"FASTEST_DONE,groups=0,comparisons=0"],top=0)[0],0)
+
     def test_missing_done_is_incomplete(self):
         self.assertEqual(analyze(self.valid[:-1], top=0)[0], 1)
 

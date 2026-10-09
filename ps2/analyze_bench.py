@@ -51,6 +51,17 @@ def parse(lines: list[str]) -> tuple[list[Sample], list[str], dict[str, int], st
             continue
         if line.startswith("PASS: ") or line.startswith("PASS "):
             statuses["correctness_pass_lines"] += 1
+        elif line.startswith("FUSED_PASS,"):
+            try:
+                fields = dict(field.split("=", 1) for field in line.split(",")[1:])
+                cases, variants = int(fields["cases"]), int(fields["variants"])
+                if cases <= 0 or variants <= 0:
+                    raise ValueError
+            except (ValueError, KeyError):
+                issues.append(f"line {line_no}: invalid FUSED_PASS fields")
+            else:
+                statuses["fused_pass_lines"] += 1
+                statuses["fused_cases"] += cases
         elif line.startswith("EXTRA_PASS,"):
             statuses["extra_pass_lines"] += 1
         elif line.startswith("FULL_PASS,"):
@@ -59,6 +70,19 @@ def parse(lines: list[str]) -> tuple[list[Sample], list[str], dict[str, int], st
             statuses["color_pass_lines"] += 1
         elif line.startswith("FAIL") or line.startswith("BENCH_FAIL,") or line.startswith("EXTRA_FAIL,") or line.startswith("FULL_FAIL,") or line.startswith("COLOR_FAIL,"):
             issues.append(f"line {line_no}: {line}")
+        elif line.startswith("RESULT,"):
+            # Legacy A/B console rows can contradict BENCH_DONE. They
+            # must fail the machine log, regardless of aggregate counts.
+            fields = [x.strip() for x in line.split(",")[1:]]
+            if any(x == "X" or x.endswith("=X") or x.endswith(": X")
+                   for x in fields):
+                issues.append(f"line {line_no}: failed RESULT row: {line}")
+        elif line.startswith("A: X") or line.startswith("B: X"):
+            issues.append(f"line {line_no}: console side failed: {line}")
+        elif line.startswith("FASTEST_DONE,"):
+            statuses["fastest_runs_completed"] += 1
+        elif line.startswith("FASTEST,"):
+            statuses["fastest_rows"] += 1
         elif line.startswith("BENCH_INFO,"):
             for token in line.split(",")[1:]:
                 if token.startswith("unit="):
@@ -106,17 +130,23 @@ def analyze(lines: list[str], top: int = 20) -> tuple[int, list[Sample]]:
         f"extra PASS lines: {statuses['extra_pass_lines']}; "
         f"full PASS lines: {statuses['full_pass_lines']}; "
         f"color PASS lines: {statuses['color_pass_lines']}; "
+        f"fused PASS lines: {statuses['fused_pass_lines']}; "
         f"completed benchmark runs: {statuses['benchmark_runs_completed']}; "
         f"rows: {len(samples)}; failures: {len(issues)}"
     )
-    if not statuses["correctness_pass_lines"]:
+    fused = statuses["fused_pass_lines"] > 0
+    if fused and not statuses["correctness_pass_lines"] and statuses["fused_cases"] != len(samples):
+        issues.append("FUSED_PASS case count does not match validated benchmark rows")
+    if not fused and not statuses["correctness_pass_lines"]:
         issues.append("No correctness PASS line in the supplied log")
-    if not statuses["extra_pass_lines"]:
+    if not fused and not statuses["extra_pass_lines"]:
         issues.append("No EXTRA_PASS line: forward/palette tests may not have run")
-    if not statuses["full_pass_lines"]:
+    if not fused and not statuses["full_pass_lines"]:
         issues.append("No FULL_PASS line: complete kernel matrix may not have run")
-    if not statuses["color_pass_lines"]:
+    if not fused and not statuses["color_pass_lines"]:
         issues.append("No COLOR_PASS line: packed/color tests may not have run")
+    if any(line.strip().startswith("FASTEST_HEADER,") for line in lines) and        not statuses["fastest_runs_completed"]:
+        issues.append("FASTEST summary is incomplete")
     if not statuses["benchmark_runs_completed"]:
         issues.append("No BENCH_DONE line: output may be incomplete")
     if not samples:

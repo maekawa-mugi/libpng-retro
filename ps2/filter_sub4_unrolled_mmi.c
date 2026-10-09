@@ -91,5 +91,3 @@ png_read_filter_row_sub4_unroll4_ps2(png_row_info *row_info, png_byte *row,
    for (i = 4; i < rowbytes; ++i)
       row[i] = (png_byte)((unsigned int)row[i] + (unsigned int)row[i - 4]);
 }
-
-

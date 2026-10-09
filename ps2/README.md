@@ -1,5 +1,70 @@
 # PS2 Emotion Engine MMI backend
 
+## Integrated PR #1–#6 build on MSYS2 MINGW32
+
+Run `bash ps2/build-all-pr-msys.sh` from the repository root. It uses
+`/usr/local/ps2dev` and its `ps2sdk` subdirectory by default; existing
+PS2DEV/PS2SDK values override these paths. GCC 15.2.0 successfully built:
+
+- `build-ps2-mmi/all-pr/all-in-one.elf`: every experimental option, the
+  unified sampled correctness checks and the 88-variant benchmark lab. Diagnostics
+  go to both the PS2 screen and stdout; `TEST: OK! code=0` appears only after
+  the fused sweep finishes. The final screen remains visible.
+  The final A/B screen compares A (generic C) with B (MMI candidates):
+  passing checks show green `O` on both lines; failed/incomplete checks show
+  red `X`. Elapsed milliseconds to three decimals compare speed independently
+  of the test status. Green `END!` marks termination of the run, including a
+  failed run; `TEST: OK/FAIL` and `O/X` indicate success or failure.
+  Totals sum the same validated benchmark batches, subtracting row-copy
+  overhead. The live default measures each batch once. This is a kernel
+  sweep, not whole-PNG decode timing; repeated candidate families are included.
+  Before the first passing batch, live status is `-`; afterward `O` means
+  checks have passed so far. Zero-resolution time does not change test status.
+  During execution, the screen updates per row width with the current
+  variant, PASS/FAIL counts and provisional A/B totals. CSV is buffered to
+  stdout without drawing each row on screen, outside measured regions.
+- `build-ps2-mmi/all-pr/libpng.a` and `include/`: full PS2 libpng static
+  library with all production read-filter options enabled.
+- `build-ps2-mmi/all-pr/pngtest.elf`: full libpng read/write test linked
+  with the SDK's zlib. Requires PNG files and a working runtime filesystem.
+
+PR #2–#6 form a stack. PR #6 already preserves PR #1's Up 2x and Sub4 4x
+loops as separately benchmarkable alternatives; integration retains those
+alongside the original kernels. The extra write/color/Adam7 lab kernels
+remain outside production libpng dispatch, as documented below.
+
+All host regression programs, portable syntax checks and four Python parser
+tests pass with MINGW32 GCC. The all-in-one ELF builds with
+`-Wall -Wextra -Werror`; the library emits one unused-original-Up warning
+when the Up 2x option replaces it. These new ELFs have not yet been run on
+PCSX2 or real hardware. Benchmark timing uses `clock_ticks`, not EE cycles.
+
+To repeat host checks with a Windows Python installation, set the Makefile's
+`PYTHON` variable to its MSYS path:
+`make -f ps2/Makefile.host test CC=gcc PYTHON=/c/path/to/python.exe`.
+
+### Fast unified runtime
+
+The default ELF validates the final scalar/candidate outputs from the timed
+batches directly, including output guards and previous-row preservation.
+All 88 candidates remain available. It checks 18 lengths (short rows and
+vector boundaries from 1 to 31, then 32/64/128/256/1024/4096/16384) and seven
+alignments, skipping ineligible direct kernels. It stops at the first mismatch.
+The normal build skips the separate exhaustive suites; these sampled runtime
+checks do not replace exhaustive host coverage, zero-length cases, disjoint
+transforms or all seven Adam7 passes in those suites.
+
+Short rows use one iteration; other rows use 2–64 iterations and one timer
+measurement per batch. This reduces runtime, with noisier per-case estimates
+than the original repeated benchmark. No EE speedup or wall-time reduction
+has yet been measured on hardware/PCSX2.
+
+For the original exhaustive suites followed by the fused sweep, rebuild:
+`PNG_PS2_TEST_EXHAUSTIVE=1 bash ps2/build-all-pr-msys.sh`.
+That mode restores 32–512 iterations and three measurements per batch.
+The analyzer recognizes `FUSED_PASS` + `BENCH_DONE` as the unified completion
+markers and verifies the number of validated rows; it still accepts older logs.
+
 This directory contains an experimental PNG read-filter backend for the
 PlayStation 2 Emotion Engine (R5900).  It uses the **EE 128-bit integer MMI
 instructions**, not MIPS MSA and not Loongson's unrelated MMI extension.
@@ -496,3 +561,39 @@ The host syntax target now parses both the default MMI-only source
 configuration and the all-opt-in source configuration. The GCC-only
 `syntax-ee-gcc` target parses the actual inline-assembly operands in
 both configurations without assembling R5900 instructions.
+
+## One-run automatic fastest-kernel selection (all PRs integrated)
+
+**Build once, boot once, no runtime arguments:** after configuring PS2SDK,
+run `bash ps2/build-pcsx2.sh` and boot `build-ps2-mmi/auto-fastest.elf` in
+PCSX2 or on real EE hardware. For the PS2SDK Makefile, use
+`sh ps2/build_filter_variants.sh one` and boot `ps2/variant-elfs/all-in-one.elf`.
+
+The default standalone ELF is **not** the old correctness-only `all` ELF:
+`PNG_PS2_BENCH_ENABLE` and all experimental comparison kernels are compiled
+into it. The run checks the very same output buffers used by its timing
+batches; it does **not** repeat the separate exhaustive filter loops.
+A full 0..1024, all-16-alignment verification remains available by setting
+`PNG_PS2_TEST_EXHAUSTIVE=1` at **build** time when the additional runtime
+is acceptable. The default quick run checks 18 lengths and 7 alignments,
+including short/truncated rows, and all kernels included in the sweep.
+
+At completion, the ELF emits `FASTEST,...` entries comparing the **same
+filter, bpp, rowbytes and pointer alignment** (64, 1024 and 4096 bytes;
+aligned and 1-byte offset); `AUTO,...` is the on-screen readable summary
+for the 1024-byte aligned cases. A missing/low-resolution timer shows N/A,
+not a fictional speedup. Three repetitions are used for these representative
+widths, while corner-case lengths use one correctness+timetable batch.
+
+The extra `Up` alternatives are original 1x, original 2x, interleaved 2x
+loads, prefetch 1x, prefetch 2x, 4x, and prefetch 4x. These alternatives
+address the EE Core User Manual's load-use interlocks, independently
+schedulable loads and 128-bit SIMD pipeline. Since prefetch may worsen
+cache behavior, **only measured correctness-passing implementations**
+enter the winner table; it never claims a winner across unrelated filters.
+
+The log parser `python3 ps2/analyze_bench.py capture.txt --csv result.csv`
+rejects `RESULT,A,X`, `RESULT,B,X`, `A: X`, `B: X`, missing `BENCH_DONE`, and
+incomplete FASTEST reports. No speed result is authoritative until the
+R5900 build and execution pass: host GCC/Clang tests are portable models,
+not EE assembly validation.

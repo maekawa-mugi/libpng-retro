@@ -29,7 +29,9 @@ typedef struct { size_t rowbytes; } png_row_info;
 #endif
 #include "filter_up_mmi.c"
 #include "filter_up_unrolled_mmi.c"
+#ifndef PNG_PS2_SYNTAX_PORTABLE
 #include "filter_sub4_unrolled_mmi.c"
+#endif
 #include "filter_gray_mmi.c"
 #include "filter_rgb3.c"
 #include "filter_wide_mmi.c"

@@ -7,7 +7,7 @@ png_ps2_test_color(void)
 {
    static const unsigned int depths[3]={1,2,4};
    unsigned int rep, off, mode, bit, channels;
-   size_t n,i;
+   size_t n;
    unsigned long passes=0;
    png_byte *in=png_ps2_extra_align16(full_input);
    png_byte *out=png_ps2_extra_align16(full_output);

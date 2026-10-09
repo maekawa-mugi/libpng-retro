@@ -7,6 +7,34 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef _EE
+#include <debug.h>
+#include <kernel.h>
+#include <stdarg.h>
+static void test_log(const char *format, ...)
+{
+   char message[512];
+   va_list args;
+   va_start(args, format);
+   vsnprintf(message, sizeof message, format, args);
+   va_end(args);
+   /* CSV stays on stdout; drawing thousands of rows dominates EE runtime. */
+   /* Screen uses fixed progress and final winner panel. Keep the CSV
+    * streaming to stdout without flooding the PS2 debug renderer. */
+   if (strncmp(message, "BENCH", 5) != 0 &&
+       strncmp(message, "FUSED", 5) != 0 &&
+       strncmp(message, "FASTEST", 7) != 0 &&
+       strncmp(message, "AUTO,", 5) != 0)
+      scr_printf("%s", message);
+   printf("%s", message);
+   if (strncmp(message, "BENCH", 5) != 0 ||
+       strncmp(message, "BENCH_DONE", 10) == 0 ||
+       strncmp(message, "BENCH_FAIL", 10) == 0)
+      fflush(stdout);
+}
+#define printf test_log
+#endif
+
 typedef unsigned char png_byte;
 typedef unsigned int png_uint_32;
 typedef struct png_row_info_test_struct
@@ -15,14 +43,20 @@ typedef struct png_row_info_test_struct
 } png_row_info;
 
 #include "filter_mmi.c"
+#ifdef PNG_PS2_EE_MMI_UP_SCHEDULES
+#include "filter_up_schedules_mmi.c"
+#include "filter_up4_mmi.c"
+#endif
 
 #define TEST_MAX 1024U
 #define BUF_SIZE (TEST_MAX + 64U)
 
+#if !defined(PNG_PS2_BENCH_ENABLE) || defined(PNG_PS2_TEST_EXHAUSTIVE)
 static png_byte row_storage[BUF_SIZE];
 static png_byte prev_storage[BUF_SIZE];
 static png_byte expected[BUF_SIZE];
 static png_byte prev_original[BUF_SIZE];
+#endif
 static unsigned int rng_state = 0x735a2dc1U;
 
 static png_byte *
@@ -40,6 +74,7 @@ random_byte(void)
    return (png_byte)rng_state;
 }
 
+#if !defined(PNG_PS2_BENCH_ENABLE) || defined(PNG_PS2_TEST_EXHAUSTIVE)
 static void
 reference_up(png_byte *row, const png_byte *prev, size_t n)
 {
@@ -206,17 +241,33 @@ reference_wide_avg(png_byte *row, const png_byte *prev, size_t n,
 #define PNG_PS2_TEST_WIDE_PAETH_COUNT 0
 #endif
 #define PNG_PS2_TEST_TOTAL (PNG_PS2_TEST_WIDE_PAETH_START + PNG_PS2_TEST_WIDE_PAETH_COUNT)
+#endif
 
-/* The same ELF first runs all correctness cases, then (opt-in)
- * independently checks and times every registered MMI variant. */
+/* The default benchmark uses its measured outputs for correctness checks.
+ * PNG_PS2_TEST_EXHAUSTIVE additionally runs the original exhaustive suites. */
 #ifdef PNG_PS2_BENCH_ENABLE
+#ifdef PNG_PS2_TEST_EXHAUSTIVE
 #include "test_extra_kernels.c"
+#else
+#include "extra_kernels_mmi.c"
+#include "extra_full_kernels.c"
+#include "extra_color_kernels.c"
+#endif
+#ifdef _EE
+static void test_live(const char *, unsigned int, unsigned int,
+    unsigned long, unsigned int, unsigned int);
+#define PS2_BENCH_PROGRESS test_live
+#endif
+#define PS2_BENCH_SEED_STATE(seed) (rng_state = (seed))
 #include "bench_filter_mmi.c"
 #endif
 
-int
-main(void)
+static int
+run_filters(void)
 {
+#if defined(PNG_PS2_BENCH_ENABLE) && !defined(PNG_PS2_TEST_EXHAUSTIVE)
+   return png_ps2_bench_all();
+#else
    unsigned int filter;
    unsigned int offset;
    size_t len;
@@ -224,6 +275,8 @@ main(void)
 
    for (filter = 0; filter < PNG_PS2_TEST_TOTAL; ++filter)
    {
+      printf("FILTER %u/%u RUNNING\n", filter + 1,
+          (unsigned int)PNG_PS2_TEST_TOTAL);
       for (offset = 0; offset < 16; ++offset)
       {
          for (len = 0; len <= TEST_MAX; ++len)
@@ -383,4 +436,165 @@ main(void)
       return 1;
 #endif
    return 0;
+#endif
+}
+
+#if defined(_EE) && defined(PNG_PS2_BENCH_ENABLE)
+static void
+test_live(const char *name, unsigned int index, unsigned int total,
+    unsigned long width, unsigned int passed, unsigned int failed)
+{
+   char line[96];
+   unsigned int side;
+   unsigned long long ticks[2];
+   ticks[0] = ps2_bench_ab.a_ticks;
+   ticks[1] = ps2_bench_ab.b_ticks;
+   scr_setfontcolor(0xffffffU);
+   scr_setXY(0, 0);
+   scr_printf("libpng LIVE test + benchmark\n");
+   snprintf(line, sizeof line, "Variant %u/%u: %s", index, total, name);
+   scr_printf("%-68s\n", line);
+   snprintf(line, sizeof line, "Row %lu / PASS %u / FAIL %u", width, passed, failed);
+   scr_printf("%-68s\n", line);
+   scr_printf("A = generic C / B = MMI candidates\n");
+   scr_printf("Running totals, copy subtracted (provisional)\n");
+   scr_printf("O = tests passed so far / X = test failure\n");
+   for (side = 0; side < 2; ++side)
+   {
+      unsigned long long ms = ps2_bench_ab_ms1000(ticks[side], PS2_BENCH_FREQUENCY);
+      char status = failed ? 'X' : passed ? 'O' : '-';
+      scr_setfontcolor(failed ? 0x0000ffU : passed ? 0x00ff00U : 0xffffffU);
+      snprintf(line, sizeof line, "%c: %c (%llu.%03llu ms)",
+          side ? 'B' : 'A', status, ms / 1000ULL, ms % 1000ULL);
+      scr_printf("%-68s\n", line);
+   }
+   scr_setfontcolor(0xffffffU);
+}
+#endif
+
+/* Human-readable single-screen answer, in addition to machine-readable
+ * FASTEST CSV. Only like-for-like contests with >=2 valid variants are
+ * called winners. A missing timer precision is explicitly shown as N/A.
+ * Representative row: 1024 bytes, aligned current/previous pointers. */
+#ifdef PNG_PS2_BENCH_ENABLE
+static void
+ps2_show_fastest_panel(void)
+{
+   static const struct
+   {
+      const char *label;
+      unsigned int filter, bpp;
+   } targets[] = {
+      {"Up", PS2_BENCH_UP, 1},
+      {"Sub1", PS2_BENCH_SUB, 1},
+      {"Sub2", PS2_BENCH_SUB, 2},
+      {"Sub3", PS2_BENCH_SUB, 3},
+      {"Sub4", PS2_BENCH_SUB, 4},
+      {"Sub6", PS2_BENCH_SUB, 6},
+      {"Sub8", PS2_BENCH_SUB, 8},
+      {"Average4", PS2_BENCH_AVG, 4},
+      {"Paeth4", PS2_BENCH_PAETH, 4},
+      {"Write Sub4", PS2_BENCH_WRITE_SUB4, 4}
+   };
+   unsigned int i;
+#ifdef _EE
+   scr_setfontcolor(0xffffffU);
+   scr_printf("AUTO FASTEST (1024 B / align 0; identical shape)\n");
+#endif
+   printf("AUTO FASTEST (1024 B / align 0; identical shape)\n");
+   for (i=0;i<sizeof targets/sizeof targets[0];++i)
+   {
+      const ps2_bench_winner *win =
+         &ps2_bench_winners[targets[i].filter][targets[i].bpp][1][0];
+      unsigned long speedup= win->name && win->net_ticks ?
+          (unsigned long)(((unsigned long long)win->reference_ticks*1000ULL)/
+              win->net_ticks):0;
+      if (win->eligible < 2U)
+      {
+#ifdef _EE
+         scr_printf("%-11s N/A (valid measured competitors < 2)\n",
+             targets[i].label);
+#endif
+         printf("AUTO,%s,N/A,competitors=%u\n",targets[i].label,
+             win->eligible);
+      }
+      else
+      {
+#ifdef _EE
+         scr_printf("%-11s %-25s %lu.%03lux\n",targets[i].label,
+             win->name,speedup/1000UL,speedup%1000UL);
+#endif
+         printf("AUTO,%s,%s,%lu.%03lux,competitors=%u\n",
+             targets[i].label,win->name,speedup/1000UL,
+             speedup%1000UL,win->eligible);
+      }
+   }
+}
+#endif
+
+int
+main(void)
+{
+   int result;
+   static char output_buffer[8192];
+   setvbuf(stdout, output_buffer, _IOFBF, sizeof output_buffer);
+#ifdef _EE
+   init_scr();
+#endif
+   printf("libpng PS2 live correctness and benchmark lab\n");
+   result = run_filters();
+#ifdef _EE
+   scr_clear();
+   scr_setXY(0, 0);
+   scr_setfontcolor(result ? 0x0000ffU : 0x00ff00U);
+#endif
+   printf("\nTEST: %s! code=%d\n", result ? "FAIL" : "OK", result);
+#ifdef PNG_PS2_BENCH_ENABLE
+   if (!result) ps2_show_fastest_panel();
+#endif
+#ifdef _EE
+   scr_setfontcolor(0xffffffU);
+#endif
+#ifdef PNG_PS2_BENCH_ENABLE
+   printf("FASTEST winners are determined per filter, bpp, size and alignment\n");
+   printf("A = generic C / B = MMI candidates\n");
+   printf("Matched kernel sweep; copy time subtracted\n");
+   printf("O = tests passed / X = tests failed or incomplete\n\n");
+   {
+      unsigned int side;
+      unsigned long long times[2];
+      int passed = result == 0 && ps2_bench_ab.completed && ps2_bench_ab.cases;
+      times[0] = ps2_bench_ab_ms1000(ps2_bench_ab.a_ticks,
+          PS2_BENCH_FREQUENCY);
+      times[1] = ps2_bench_ab_ms1000(ps2_bench_ab.b_ticks,
+          PS2_BENCH_FREQUENCY);
+      for (side = 0; side < 2; ++side)
+      {
+#ifdef _EE
+         scr_setfontcolor(passed ? 0x00ff00U : 0x0000ffU);
+#endif
+         printf("%c: %c (%llu.%03llu ms)\n", side ? 'B' : 'A',
+             passed ? 'O' : 'X', times[side] / 1000ULL,
+             times[side] % 1000ULL);
+      }
+#ifdef _EE
+      scr_setfontcolor(0xffffffU);
+#endif
+      if (!passed) printf("Comparison failed or incomplete\n");
+      printf("%u matched batches; %u measurement(s) per batch\n",
+          ps2_bench_ab.cases, (unsigned int)PNG_PS2_BENCH_REPEATS);
+      printf("Timer: %s\n", PS2_BENCH_UNIT);
+   }
+#endif
+#ifdef _EE
+   scr_setfontcolor(0x00ff00U);
+#endif
+   printf("\nEND!\n");
+#ifdef _EE
+   scr_setfontcolor(0xffffffU);
+#endif
+#ifdef _EE
+   SleepThread();
+#endif
+   return result;
 }

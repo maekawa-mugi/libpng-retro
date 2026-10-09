@@ -14,6 +14,7 @@ endif
 
 EE_BIN = test_filter_mmi.elf
 EE_OBJS = test_filter_mmi.o
+EE_LIBS += -ldebug
 EE_OPTFLAGS ?= -O2
 EE_WARNFLAGS ?= -Wall -Wextra
 
@@ -25,3 +26,6 @@ include $(PS2SDK)/samples/Makefile.eeglobal
 
 clean:
 	$(RM) $(EE_BIN) $(EE_OBJS)
+
+# The harness includes its filters, correctness suites and benchmark directly.
+test_filter_mmi.o: $(wildcard *.c *.h)

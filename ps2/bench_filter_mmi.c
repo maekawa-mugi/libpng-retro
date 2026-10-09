@@ -7,6 +7,20 @@
  * SPDX-License-Identifier: libpng-2.0
  */
 #include <time.h>
+#include "bench_ab_summary.h"
+static ps2_bench_ab_summary ps2_bench_ab;
+#ifndef PS2_BENCH_SEED_STATE
+#define PS2_BENCH_SEED_STATE(seed) ((void)(seed))
+#endif
+#ifndef PS2_BENCH_PROGRESS
+#define PS2_BENCH_PROGRESS(name, index, total, width, passed, failed) ((void)0)
+#endif
+#ifndef PNG_PS2_BENCH_REPEATS
+/* Nonrepresentative widths are correctness checks with one timed batch.
+ * Three repetitions are used only on the representative autotuning
+ * shapes, instead of tripling every edge-case test. */
+#define PNG_PS2_BENCH_REPEATS 3U
+#endif
 #if defined(PNG_PS2_BENCH_EE_PCCR) && defined(PNG_PS2_BENCH_POSIX_TIMER)
 #error Choose only one EE benchmark timer source
 #endif
@@ -58,6 +72,71 @@ static png_byte ps2_bench_prev_save[PS2_BENCH_CAP];
 static png_byte ps2_bench_palette_table[1024];
 static png_byte ps2_bench_rgb_table[768], ps2_bench_alpha_table[256];
 static size_t ps2_bench_input_bytes, ps2_bench_output_bytes;
+/* One shape, many candidates. A winner is never inferred by summing
+ * unrelated PNG transforms; different row widths are separate contests.
+ * The two offsets model 16-byte aligned and 1-byte misaligned buffers. */
+#define PS2_WIN_FILTERS 29U
+#define PS2_WIN_BPPS 9U
+#define PS2_WIN_WIDTHS 3U
+#define PS2_WIN_ALIGNS 2U
+typedef struct
+{
+   const char *name;
+   unsigned long net_ticks, reference_ticks;
+   unsigned int eligible;
+} ps2_bench_winner;
+static ps2_bench_winner ps2_bench_winners[PS2_WIN_FILTERS]
+    [PS2_WIN_BPPS][PS2_WIN_WIDTHS][PS2_WIN_ALIGNS];
+static unsigned int ps2_bench_winner_cases, ps2_bench_winner_groups;
+static void
+ps2_bench_consider(const char *name, unsigned int filter, unsigned int bpp,
+    size_t n, unsigned int align, unsigned long candidate,
+    unsigned long reference)
+{
+   unsigned int width_index;
+   ps2_bench_winner *best;
+   if (filter >= PS2_WIN_FILTERS || bpp >= PS2_WIN_BPPS ||
+       (align != 0U && align != 1U) || candidate == 0U ||
+       reference == 0U)
+      return;
+   width_index = n == 64 ? 0 : n == 1024 ? 1 : n == 4096 ? 2 : 3;
+   if (width_index == 3U) return;
+   best = &ps2_bench_winners[filter][bpp][width_index][align];
+   ++best->eligible;
+   ++ps2_bench_winner_cases;
+   if (best->name == 0 || candidate < best->net_ticks)
+   {
+      best->name = name;
+      best->net_ticks = candidate;
+      best->reference_ticks = reference;
+   }
+}
+static void
+ps2_bench_print_winners(void)
+{
+   static const unsigned int width_values[3] = {64, 1024, 4096};
+   unsigned int f, b, w, a;
+   printf("FASTEST_HEADER,filter,bpp,rowbytes,alignment,winner,"
+       "net_ticks,speedup_x1000,candidates\n");
+   for (f = 0; f < PS2_WIN_FILTERS; ++f)
+      for (b = 1; b < PS2_WIN_BPPS; ++b)
+         for (w = 0; w < PS2_WIN_WIDTHS; ++w)
+            for (a = 0; a < PS2_WIN_ALIGNS; ++a)
+            {
+               ps2_bench_winner *best = &ps2_bench_winners[f][b][w][a];
+               unsigned long speedup;
+               if (best->name == 0) continue;
+               speedup = (unsigned long)(((unsigned long long)
+                   best->reference_ticks * 1000ULL) / best->net_ticks);
+               printf("FASTEST,%u,%u,%u,%u,%s,%lu,%lu,%u\n",f,b,
+                   width_values[w],a,best->name,best->net_ticks,
+                   speedup,best->eligible);
+               ++ps2_bench_winner_groups;
+            }
+   printf("FASTEST_DONE,groups=%u,comparisons=%u\n",
+       ps2_bench_winner_groups,ps2_bench_winner_cases);
+}
+
 static volatile unsigned int ps2_bench_sink;
 static unsigned int ps2_bench_bpp, ps2_bench_filter;
 
@@ -99,6 +178,7 @@ ps2_bench_clock_done(void)
    __asm__ volatile ("mtps %0, 0" : : "r"(ps2_bench_old_pccr) : "memory");
 }
 #define PS2_BENCH_UNIT "ee_cycles"
+#define PS2_BENCH_FREQUENCY 294912000UL
 #elif defined(PNG_PS2_BENCH_POSIX_TIMER)
 /* Unprivileged PS2 Linux option: wall-clock microseconds, not CPU cycles.
  * Kernel scheduling may add noise; the harness repeats measurements.
@@ -118,6 +198,7 @@ static unsigned long ps2_bench_now(void)
 static unsigned long ps2_bench_delta(unsigned long a, unsigned long b)
 { return b - a; }
 #define PS2_BENCH_UNIT "microseconds"
+#define PS2_BENCH_FREQUENCY 1000000UL
 #else
 static void ps2_bench_clock_init(void) {}
 static void ps2_bench_clock_done(void) {}
@@ -125,6 +206,7 @@ static unsigned long ps2_bench_now(void) { return (unsigned long)clock(); }
 static unsigned long ps2_bench_delta(unsigned long a, unsigned long b)
 { return b - a; }
 #define PS2_BENCH_UNIT "clock_ticks"
+#define PS2_BENCH_FREQUENCY ((unsigned long)CLOCKS_PER_SEC)
 #endif
 
 static unsigned int
@@ -599,9 +681,14 @@ ps2_bench_palette_expand(png_row_info *ri, png_byte *row,
 }
 
 /* Benchmark-only snapshots of unchanged eemmi packed filter kernels. */
+#ifndef PNG_PS2_BENCH_TEST_VARIANTS
 #include "bench_baseline_mmi.c"
+#endif
 
 static const ps2_bench_variant ps2_bench_variants[] = {
+#ifdef PNG_PS2_BENCH_TEST_VARIANTS
+   PNG_PS2_BENCH_TEST_VARIANTS
+#else
    {"write-up-mmi", 1, PS2_BENCH_WRITE_UP, 1, png_ps2_write_up_mmi},
    {"write-sub1-packed", 1, PS2_BENCH_WRITE_SUB_ALL, 1, ps2_bench_write_sub_all},
    {"write-avg1-packed", 1, PS2_BENCH_WRITE_AVG_ALL, 1, ps2_bench_write_avg_all},
@@ -656,6 +743,18 @@ static const ps2_bench_variant ps2_bench_variants[] = {
    {"rgba-to-argb",4,PS2_BENCH_RGBA_ARGB,1,ps2_bench_argb},
 
    {"up-mmi", 1, PS2_BENCH_UP, 1, png_read_filter_row_up_ps2},
+#ifdef PNG_PS2_EE_MMI_UP_SCHEDULES
+   {"up-2x-interleaved", 1, PS2_BENCH_UP, 16,
+       png_read_filter_row_up_2x_interleaved_ps2},
+   {"up-2x-prefetch", 1, PS2_BENCH_UP, 16,
+       png_read_filter_row_up_2x_prefetch_ps2},
+   {"up-1x-prefetch", 1, PS2_BENCH_UP, 16,
+       png_read_filter_row_up_1x_prefetch_ps2},
+   {"up-4x", 1, PS2_BENCH_UP, 64,
+       png_read_filter_row_up_4x_ps2},
+   {"up-4x-prefetch", 1, PS2_BENCH_UP, 64,
+       png_read_filter_row_up_4x_prefetch_ps2},
+#endif
 #ifdef PNG_PS2_EE_MMI_UP_2X
    {"up-2x-direct", 1, PS2_BENCH_UP, 16, png_read_filter_row_up_2x_ps2},
 #endif
@@ -716,6 +815,7 @@ static const ps2_bench_variant ps2_bench_variants[] = {
 #ifdef PNG_PS2_EE_MMI_SUB8_WORDS
    {"sub8-words-direct", 8, PS2_BENCH_SUB, 32, ps2_bench_sub8_words},
 #endif
+#endif /* PNG_PS2_BENCH_TEST_VARIANTS */
 };
 
 /* Returns the timer tick span of a batch; includes row replay by design.
@@ -730,6 +830,13 @@ ps2_bench_batch(ps2_bench_fn fn, png_row_info *ri, png_byte *dst,
    for (k = 0; k < loops; ++k)
    {
       memcpy(dst, src, ps2_bench_input_bytes);
+      /* Each replay restores the expansion area to a poison value.
+       * Without this, a previous repetition could hide an incomplete
+       * in-place conversion in a later repetition.  It is part of the
+       * copy-only baseline too, so the reported net time subtracts it. */
+      if (ps2_bench_output_bytes > ps2_bench_input_bytes)
+         memset(dst + ps2_bench_input_bytes, 0xa5,
+             ps2_bench_output_bytes - ps2_bench_input_bytes + 16U);
       if (fn != 0)
          fn(ri, dst, prev);
       ps2_bench_sink += dst[0];
@@ -744,7 +851,10 @@ ps2_bench_best(ps2_bench_fn fn, png_row_info *ri, png_byte *dst,
 {
    unsigned int rep;
    unsigned long best = ~0UL;
-   for (rep = 0; rep < 3; ++rep)
+   unsigned int rounds = (ri->rowbytes == 64U ||
+       ri->rowbytes == 1024U || ri->rowbytes == 4096U) ?
+       PNG_PS2_BENCH_REPEATS : 1U;
+   for (rep = 0; rep < rounds; ++rep)
    {
       unsigned long elapsed = ps2_bench_batch(fn, ri, dst, src, prev, loops);
       if (elapsed < best) best = elapsed;
@@ -755,7 +865,9 @@ ps2_bench_best(ps2_bench_fn fn, png_row_info *ri, png_byte *dst,
 static int
 png_ps2_bench_all(void)
 {
-   static const unsigned int widths[] = {32, 64, 128, 256, 1024, 4096, 16384};
+   static const unsigned int widths[] = {
+       1, 2, 3, 4, 5, 7, 8, 15, 16, 17, 31,
+       32, 64, 128, 256, 1024, 4096, 16384};
    static const unsigned int offsets[] = {0, 1, 3, 4, 8, 12, 15};
    unsigned int index, wi, oi, j, fails = 0, successes = 0;
    png_byte *src = aligned16(ps2_bench_source);
@@ -764,8 +876,13 @@ png_ps2_bench_all(void)
    png_byte *exp = aligned16(ps2_bench_expect);
    png_byte *saved = aligned16(ps2_bench_prev_save);
 
-   printf("BENCH_INFO,unit=%s,clock_per_sec=%lu,repeats=3,subtract_copy=1\n",
-       PS2_BENCH_UNIT, (unsigned long)CLOCKS_PER_SEC);
+   memset(&ps2_bench_ab, 0, sizeof ps2_bench_ab);
+   memset(ps2_bench_winners, 0, sizeof ps2_bench_winners);
+   ps2_bench_winner_cases = ps2_bench_winner_groups = 0;
+
+   printf("BENCH_INFO,unit=%s,clock_per_sec=%lu,repeats=%u,subtract_copy=1\n",
+       PS2_BENCH_UNIT, (unsigned long)CLOCKS_PER_SEC,
+       (unsigned int)PNG_PS2_BENCH_REPEATS);
    printf("BENCH_HEADER,variant,filter,bpp,rowbytes,row_align,prev_align,"
           "loops,copy_ticks,scalar_ticks,optimized_ticks,"
           "scalar_net_ticks,optimized_net_ticks,optimized_ticks_per_byte_x1000\n");
@@ -781,13 +898,26 @@ png_ps2_bench_all(void)
        sizeof ps2_bench_variants[0]; ++index)
    {
       const ps2_bench_variant *v = &ps2_bench_variants[index];
+      PS2_BENCH_PROGRESS(v->name, index + 1,
+          sizeof ps2_bench_variants / sizeof ps2_bench_variants[0],
+          0, successes, fails);
       for (wi = 0; wi < sizeof widths / sizeof widths[0]; ++wi)
       {
          size_t n = widths[wi];
-         unsigned int loops = 32768U / (unsigned int)n;
-         if (n < v->minlen) continue;
+         unsigned int loops;
+#ifdef PNG_PS2_TEST_EXHAUSTIVE
+         loops = 32768U / (unsigned int)n;
          if (loops < 32U) loops = 32U;
          if (loops > 512U) loops = 512U;
+#else
+         loops = n < 32 ? 1U : 8192U / (unsigned int)n;
+         if (loops < 2U && n >= 32) loops = 2U;
+         if (loops > 64U) loops = 64U;
+#endif
+         if (n == 64U && loops < 128U) loops = 128U;
+         if (n == 1024U && loops < 32U) loops = 32U;
+         if (n == 4096U && loops < 8U) loops = 8U;
+         if (n < v->minlen) continue;
 
          for (oi = 0; oi < sizeof offsets / sizeof offsets[0]; ++oi)
          {
@@ -829,6 +959,14 @@ png_ps2_bench_all(void)
             ps2_bench_bpp = v->bpp;
             ps2_bench_filter = v->filter;
 
+            /* Every competing candidate receives IDENTICAL pseudorandom
+             * row data for a given filter/bpp/length/alignment shape.
+             * Repeated runs are reproducible independent of candidate
+             * declaration order. */
+            PS2_BENCH_SEED_STATE((0x735a2dc1U ^
+                (v->filter * 0x9e3779b9U) ^
+                (v->bpp * 0x85ebca6bU) ^
+                ((unsigned int)n * 0xc2b2ae35U) ^ offsets[oi]) | 1U);
             for (j = 0; j < ps2_bench_input_bytes + 16; ++j)
                s[j] = j < ps2_bench_input_bytes ? random_byte() : 0xa5;
             for (j = 0; j < previous_bytes + 16; ++j)
@@ -852,28 +990,43 @@ png_ps2_bench_all(void)
                memset(r + ps2_bench_input_bytes + 16, 0xa5,
                    ps2_bench_output_bytes - ps2_bench_input_bytes);
             }
-            ps2_bench_scalar(&ri, e, p);
-            v->fn(&ri, r, p);
+            /* Timed batches produce the outputs to validate: no extra run. */
+            copy_time = ps2_bench_best(0, &ri, r, s, p, loops);
+            scalar_time = ps2_bench_best(ps2_bench_scalar, &ri, e, s, p, loops);
+            candidate_time = ps2_bench_best(v->fn, &ri, r, s, p, loops);
 
-            if (memcmp(e, r, checked_bytes + 16) ||
+            /* Independently validate both output canaries.  A matching
+             * corruption in A and B must NOT be counted as correct. */
+            /* Independently check every guard byte; equality between A
+             * and B is insufficient if both paths scribble identically. */
+            for (j = 0; j < 16; ++j)
+            {
+               if (e[checked_bytes + j] != 0xa5 ||
+                   r[checked_bytes + j] != 0xa5)
+                  break;
+            }
+            if (j != 16 || memcmp(e, r, checked_bytes + 16) ||
                 memcmp(q, p, previous_bytes + 16))
             {
                ++fails;
                printf("BENCH_FAIL,%s,%u,%lu,%u\n", v->name,
                    v->bpp, (unsigned long)n, offsets[oi]);
-               continue;
+               PS2_BENCH_PROGRESS(v->name, index + 1,
+                   sizeof ps2_bench_variants / sizeof ps2_bench_variants[0],
+                   (unsigned long)n, successes, fails);
+               ps2_bench_clock_done();
+               return 1;
             }
             ++successes;
-
-            copy_time = ps2_bench_best(0, &ri, r, s, p, loops);
-            scalar_time = ps2_bench_best(ps2_bench_scalar, &ri, r, s,
-                p, loops);
-            candidate_time = ps2_bench_best(v->fn, &ri, r, s, p, loops);
 
             net_scalar = scalar_time > copy_time ?
                 scalar_time - copy_time : 0;
             net_candidate = candidate_time > copy_time ?
                 candidate_time - copy_time : 0;
+            ps2_bench_ab_add(&ps2_bench_ab, copy_time, scalar_time,
+                candidate_time);
+            ps2_bench_consider(v->name, v->filter, v->bpp, n,
+                offsets[oi], net_candidate, net_scalar);
             scaled = ps2_bench_output_bytes && loops ?
                 (unsigned long)(((unsigned long long)net_candidate * 1000ULL) /
                     ((unsigned long long)ps2_bench_output_bytes * loops)) : 0;
@@ -883,9 +1036,16 @@ png_ps2_bench_all(void)
                 copy_time, scalar_time, candidate_time,
                 net_scalar, net_candidate, scaled);
          }
+         PS2_BENCH_PROGRESS(v->name, index + 1,
+             sizeof ps2_bench_variants / sizeof ps2_bench_variants[0],
+             (unsigned long)n, successes, fails);
       }
    }
    ps2_bench_clock_done();
+   ps2_bench_print_winners();
+   ps2_bench_ab.completed = fails == 0;
+   printf("FUSED_PASS,cases=%u,variants=%u\n", successes,
+       (unsigned int)(sizeof ps2_bench_variants / sizeof ps2_bench_variants[0]));
    printf("BENCH_DONE,passed=%u,failed=%u,sink=%u\n",
        successes, fails, ps2_bench_sink);
    return fails ? 1 : 0;

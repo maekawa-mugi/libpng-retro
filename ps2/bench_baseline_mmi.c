@@ -161,4 +161,3 @@ png_ps2_bench_sub2_original(png_row_info *row_info, png_byte *row,
       row[i] = (png_byte)((unsigned int)row[i] +
           (i < 2 ? 0U : (unsigned int)row[i - 2]));
 }
-

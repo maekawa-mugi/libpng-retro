@@ -14,6 +14,9 @@ build_variant()
     name=$1
     shift
     flags="-O2"
+    if [ "${PNG_PS2_TEST_EXHAUSTIVE:-0}" = 1 ]; then
+        flags="$flags -DPNG_PS2_TEST_EXHAUSTIVE"
+    fi
     for opt
     do
         flags="$flags -D$opt"
@@ -29,12 +32,13 @@ build_variant()
     cp ps2/test_filter_mmi.elf "$out/$name.elf"
 }
 
-# Run this ELF first: complete correctness then all-kernel benchmark CSV.
+# Run this ELF first: fused correctness and live all-kernel benchmark.
 build_variant all-in-one PNG_PS2_BENCH_ENABLE \
     PNG_PS2_EE_MMI_SUB3_PREFIX PNG_PS2_EE_MMI_GRAY_PREFIX16 \
     PNG_PS2_EE_MMI_SUB4_PREFIX PNG_PS2_EE_MMI_SUB6_PREFIX16 \
     PNG_PS2_EE_MMI_SUB8_PREFIX16 PNG_PS2_EE_MMI_SUB8_WORDS \
-    PNG_PS2_EE_MMI_UP_2X PNG_PS2_EE_MMI_SUB4_UNROLL4 \
+    PNG_PS2_EE_MMI_UP_2X PNG_PS2_EE_MMI_UP_SCHEDULES \
+    PNG_PS2_EE_MMI_SUB4_UNROLL4 \
     PNG_PS2_EE_MMI_AVG4_DUAL PNG_PS2_EE_MMI_GRAY_AVG \
     PNG_PS2_EE_MMI_WIDE_AVG PNG_PS2_EE_MMI_PAETH \
     PNG_PS2_EE_MMI_PAETH_MASK
