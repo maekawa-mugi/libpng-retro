@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - eemmi
+      - ee-mmi-test-spr
     paths:
       - "ps2/**"
       - ".github/workflows/ps2-ee-mmi-host.yml"
