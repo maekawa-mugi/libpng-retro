@@ -43,7 +43,13 @@ typedef unsigned int png_uint_32;
 typedef struct png_row_info_test_struct
 {
    size_t rowbytes;
+   png_uint_32 width;
+   png_byte color_type, channels, bit_depth, pixel_depth;
 } png_row_info;
+typedef struct { png_byte red, green, blue; } png_color;
+#define PNG_COLOR_TYPE_PALETTE 3
+#define PNG_COLOR_TYPE_RGB 2
+#define PNG_COLOR_TYPE_RGB_ALPHA 6
 
 #include "filter_mmi.c"
 #ifdef PNG_PS2_EE_MMI_UP_SCHEDULES
@@ -263,13 +269,18 @@ static void test_live(const char *, unsigned int, unsigned int,
 #endif
 #define PS2_BENCH_SEED_STATE(seed) (rng_state = (seed))
 #include "bench_filter_mmi.c"
+/* Opt-in palette's actual production worker: test it through the same
+ * png_row_info contract on EE, not just through microkernel adapters. */
+#include "palette_production.c"
+#include "test_palette_hook.c"
 #endif
 
 static int
 run_filters(void)
 {
 #if defined(PNG_PS2_BENCH_ENABLE) && !defined(PNG_PS2_TEST_EXHAUSTIVE)
-   return png_ps2_bench_all();
+   if (png_ps2_bench_all() != 0) return 1;
+   return png_ps2_test_palette_hook();
 #else
    unsigned int filter;
    unsigned int offset;
@@ -436,6 +447,8 @@ run_filters(void)
    if (png_ps2_test_color() != 0)
       return 1;
    if (png_ps2_bench_all() != 0)
+      return 1;
+   if (png_ps2_test_palette_hook() != 0)
       return 1;
 #endif
    return 0;
