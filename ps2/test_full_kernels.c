@@ -228,7 +228,7 @@ png_ps2_test_full(void)
             for(i=0;i<size+16;++i)
                dst[i]=i<size?png_ps2_full_random():0xa5;
             memcpy(expect,dst,size+16);
-            for(i=0;i<PS2_FULL_CAP;++i)
+            for(i=0;i<128U*8U+16U;++i)
                src[i]=png_ps2_full_random();
             for(x=png_ps2_adam7_xstart[pass];x<n;
                 x+=png_ps2_adam7_xstep[pass],++k)
@@ -253,7 +253,7 @@ png_ps2_test_full(void)
             for(i=0;i<bytes+16;++i)
                dst[i]=i<bytes?png_ps2_full_random():0xa5;
             memcpy(expect,dst,bytes+16);
-            for(i=0;i<PS2_FULL_CAP;++i)
+            for(i=0;i<128U*8U+16U;++i)
                src[i]=png_ps2_full_random();
             for(x=png_ps2_adam7_xstart[pass];x<n;
                 x+=png_ps2_adam7_xstep[pass],++k)
