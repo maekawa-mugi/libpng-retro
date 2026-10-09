@@ -19,16 +19,7 @@ static void test_log(const char *format, ...)
    va_start(args, format);
    vsnprintf(message, sizeof message, format, args);
    va_end(args);
-   /* CSV stays on stdout; drawing thousands of rows dominates EE runtime. */
-   /* Screen uses fixed progress and final winner panel. Keep the CSV
-    * streaming to stdout without flooding the PS2 debug renderer. */
-   if (strncmp(message, "BENCH", 5) != 0 &&
-       strncmp(message, "FUSED", 5) != 0 &&
-       strncmp(message, "FASTEST", 7) != 0 &&
-       strncmp(message, "AUTO,", 5) != 0 &&
-       strncmp(message, "AUTO_", 5) != 0 &&
-       strncmp(message, "RESULT", 6) != 0)
-      scr_printf("%s", message);
+   /* stdout only; the debug screen is drawn with fixed coordinates. */
    printf("%s", message);
    if (strncmp(message, "BENCH", 5) != 0 ||
        strncmp(message, "BENCH_DONE", 10) == 0 ||
@@ -479,146 +470,165 @@ static const ps2_bench_target ps2_bench_targets[] = {
 
 #if defined(_EE) && defined(PNG_PS2_BENCH_ENABLE)
 #include "compact_layout.h"
-static unsigned int test_page = ~0U;
+#define PS2_SCREEN_VARIANTS \
+   (sizeof ps2_bench_variants / sizeof ps2_bench_variants[0])
+static unsigned int screen_first[PS2_SCREEN_VARIANTS];
+static unsigned int screen_group[PS2_SCREEN_VARIANTS];
+static unsigned int screen_groups;
+static int screen_ready;
 
-/* Each candidate occupies only ONE cell: number, shortened unique-ish name
- * and independent scalar/plan correctness marks. Full names, timings and
- * alignment-level ranking remain unabridged in the serial CSV output. */
-static char
-test_state_mark(unsigned int state)
+static void
+screen_init(void)
 {
-   switch (state)
+   unsigned int i,g;
+   screen_groups=0;
+   for (i=0;i<PS2_SCREEN_VARIANTS;++i)
    {
-      case PS2_AB_PASS: return 'O';
-      case PS2_AB_FAIL: return 'X';
-      case PS2_AB_RUNNING: return '~';
-      default: return '-';
+      const ps2_bench_variant *v=&ps2_bench_variants[i];
+      for (g=0;g<screen_groups;++g)
+      {
+         const ps2_bench_variant *other=&ps2_bench_variants[screen_first[g]];
+         if (v->filter==other->filter && v->bpp==other->bpp) break;
+      }
+      if (g==screen_groups) screen_first[screen_groups++]=i;
+      screen_group[i]=g;
    }
+   screen_ready=1;
 }
 
-static void
-test_draw_row(unsigned int index)
-{
-   const ps2_bench_ab_result *item = &ps2_bench_results[index];
-   const unsigned int a = item->failures[0] ? PS2_AB_FAIL : item->state[0];
-   const unsigned int b = item->failures[1] ? PS2_AB_FAIL : item->state[1];
-   const unsigned int x = ps2_ab_x_of(index);
-   const unsigned int row = ps2_ab_row_of(index);
-   scr_setXY(x, row);
-   scr_setfontcolor(a == PS2_AB_FAIL || b == PS2_AB_FAIL ? 0x0000ffU :
-       a == PS2_AB_PASS && b == PS2_AB_PASS ? 0x00ff00U :
-       a == PS2_AB_RUNNING || b == PS2_AB_RUNNING ? 0x00ffffU :
-       0xffffffU);
-   scr_printf("%02u %-16.16s A%cB%c", index+1U,
-       ps2_bench_variants[index].name, test_state_mark(a),
-       test_state_mark(b));
-}
-
-/* Five rows, two columns: the ten representative 1024-byte winner verdicts
- * are ALWAYS visible on every result page, including Scalar victories. */
-static void
-test_draw_winners(void)
+static unsigned int
+screen_plan_id(const ps2_bench_variant *v, const char *name)
 {
    unsigned int i;
-   for (i=0;i<sizeof ps2_bench_targets / sizeof ps2_bench_targets[0];++i)
+   if (!name) return 0;
+   for (i=0;i<PS2_SCREEN_VARIANTS;++i)
+      if (ps2_bench_variants[i].filter==v->filter &&
+          ps2_bench_variants[i].bpp==v->bpp &&
+          strcmp(ps2_bench_variants[i].name,name)==0) return i+1U;
+   return 0;
+}
+
+/* 1024-byte aligned row: one unique (filter,bpp) contest per cell.
+ * 'GG:NN WIN 43.3x' means group GG, candidate NN in stdout MAP.
+ * Other timings and alignments remain available in unabridged CSV. */
+static void
+screen_cell(unsigned int g)
+{
+   const ps2_bench_variant *v;
+   const ps2_bench_winner *win;
+   enum ps2_bench_verdict verdict;
+   unsigned long ratio;
+   unsigned int id;
+   char t[32];
+   if (g>=screen_groups || g>=PS2_WIN_CAPACITY) return;
+   v=&ps2_bench_variants[screen_first[g]];
+   win=&ps2_bench_winners[v->filter][v->bpp][1][0];
+   verdict=win->name ? ps2_bench_verdict(win->reference_ticks,win->net_ticks) :
+       PS2_BENCH_UNMEASURED;
+   ratio=ps2_bench_winner_ratio_x1000(win->reference_ticks,win->net_ticks);
+   id=screen_plan_id(v,win->name);
+   if (verdict==PS2_BENCH_PLAN_WIN && id)
    {
-      const ps2_bench_target *target = &ps2_bench_targets[i];
-      const ps2_bench_winner *win =
-         &ps2_bench_winners[target->filter][target->bpp][1][0];
-      enum ps2_bench_verdict verdict = win->name ?
-          ps2_bench_verdict(win->reference_ticks, win->net_ticks) :
-          PS2_BENCH_UNMEASURED;
-      unsigned long ratio = ps2_bench_winner_ratio_x1000(
-          win->reference_ticks, win->net_ticks);
-      char outcome[12];
-      char speed[8];
-      if (verdict == PS2_BENCH_PLAN_WIN)
-         snprintf(outcome, sizeof outcome, "PLAN %c WIN",
-             ps2_bench_plan_letter(win->plan_index));
-      else if (verdict == PS2_BENCH_SCALAR_WIN)
-         snprintf(outcome, sizeof outcome, "SCALAR WIN");
-      else if (verdict == PS2_BENCH_TIE)
-         snprintf(outcome, sizeof outcome, "TIE");
+      if (ratio>=1000000UL)
+         snprintf(t,sizeof t,"%02u:%02u WIN >999x",g+1U,id);
       else
-         snprintf(outcome, sizeof outcome, "N/A");
-
-      if (verdict == PS2_BENCH_UNMEASURED)
-         snprintf(speed, sizeof speed, "--");
-      else if (ratio >= 1000000UL)
-         snprintf(speed, sizeof speed, ">999x");
-      else
-         snprintf(speed, sizeof speed, "%lu.%02lux",
-             ratio/1000UL, (ratio%1000UL)/10UL);
-
-      scr_setXY(i < PS2_AB_SUMMARY_ROWS ? 1U :
-          PS2_AB_SUMMARY_RIGHT_X,
-          PS2_AB_SUMMARY_FIRST_ROW + (i % PS2_AB_SUMMARY_ROWS));
-      scr_setfontcolor(verdict == PS2_BENCH_PLAN_WIN ? 0x00ff00U :
-          verdict == PS2_BENCH_SCALAR_WIN ? 0x00ffffU : 0xffffffU);
-      scr_printf("%-6.6s %-10.10s %-12.12s %7.7s",
-          target->label, outcome, win->name ? win->name : "-", speed);
+         snprintf(t,sizeof t,"%02u:%02u WIN %lu.%01lux",
+             g+1U,id,ratio/1000UL,(ratio%1000UL)/100UL);
    }
+   else if (verdict==PS2_BENCH_SCALAR_WIN)
+   {
+      if (ratio>=1000000UL)
+         snprintf(t,sizeof t,"%02u:S WIN >999x",g+1U);
+      else
+         snprintf(t,sizeof t,"%02u:S WIN %lu.%01lux",
+             g+1U,ratio/1000UL,(ratio%1000UL)/100UL);
+   }
+   else if (verdict==PS2_BENCH_TIE)
+      snprintf(t,sizeof t,"%02u:= TIE",g+1U);
+   else
+      snprintf(t,sizeof t,"%02u:-- N/A",g+1U);
+   scr_setfontcolor(verdict==PS2_BENCH_PLAN_WIN?0x00ff00U:
+       verdict==PS2_BENCH_SCALAR_WIN?0x00ffffU:
+       verdict==PS2_BENCH_TIE?0xffffffU:0x808080U);
+   scr_setXY(ps2_win_x(g),ps2_win_y(g));
+   /* 18 chars max and no newline: never reach rightmost cell or wrap. */
+   scr_printf("%-18.18s",t);
 }
 
 static void
-test_draw_page(unsigned int page, int finished, int result)
+screen_counts(void)
 {
-   unsigned int i, total =
-      (unsigned int)(sizeof ps2_bench_variants / sizeof ps2_bench_variants[0]);
-   unsigned int pages = ps2_ab_page_count(total);
-   scr_clear();
-   test_page = page;
-   scr_setfontcolor(0xffffffU);
-   scr_setXY(1,0);
-   scr_printf("libpng EE MMI | 1024B aligned winners | %u/%u | %u plans",
-       page+1U,pages,total);
-   if (finished)
-      test_draw_winners();
-   else
+   unsigned int g,plan=0,scalar=0,tie=0,unknown=0;
+   for (g=0;g<screen_groups;++g)
    {
-      scr_setXY(1,1);
-      scr_printf("A = scalar, B = MMI | one candidate per cell");
-      scr_setXY(1,2);
-      scr_printf("O passed / X failed / ~ running / - waiting");
+      const ps2_bench_variant *v=&ps2_bench_variants[screen_first[g]];
+      const ps2_bench_winner *w=&ps2_bench_winners[v->filter][v->bpp][1][0];
+      enum ps2_bench_verdict verdict=w->name ?
+          ps2_bench_verdict(w->reference_ticks,w->net_ticks):
+          PS2_BENCH_UNMEASURED;
+      if (verdict==PS2_BENCH_PLAN_WIN) ++plan;
+      else if (verdict==PS2_BENCH_SCALAR_WIN) ++scalar;
+      else if (verdict==PS2_BENCH_TIE) ++tie;
+      else ++unknown;
    }
-   for (i=page*PS2_AB_PAGE_SIZE;
-       i<total && i<(page+1U)*PS2_AB_PAGE_SIZE;++i)
-      test_draw_row(i);
+   scr_setXY(0,PS2_WIN_STATUS_Y);
+   scr_setfontcolor(0xffffffU);
+   scr_printf("PLAN WIN:%u  SCALAR WIN:%u  TIE:%u  N/A:%u       ",
+       plan,scalar,tie,unknown);
+}
 
-   scr_setfontcolor(finished && !result ? 0x00ff00U : 0xffffffU);
-   scr_setXY(1,PS2_AB_FOOTER_FIRST_ROW);
-   if (finished)
-   {
-      if (ps2_bench_dispatch_passed == 0U &&
-          ps2_bench_dispatch_failed == 0U)
-         scr_printf("TEST:%s | DISPATCH:N/A | PALETTE:%s",
-             result ? "FAIL" : "OK", result ? "CHECK LOG" : "OK");
-      else
-         scr_printf("TEST:%s | DISPATCH:%u OK %u FAIL | PALETTE:%s",
-             result ? "FAIL" : "OK", ps2_bench_dispatch_passed,
-             ps2_bench_dispatch_failed, result ? "CHECK LOG" : "OK");
-   }
-   else
-      scr_printf("RUNNING | page %u of %u",page+1U,pages);
+static void
+screen_draw(void)
+{
+   unsigned int g;
+   scr_clear();
+   scr_setXY(0,0);
    scr_setfontcolor(0xffffffU);
-   scr_setXY(1,PS2_AB_LAST_SCREEN_ROW);
-   scr_printf("%s / %u candidates | A/B O=PASS X=FAIL ~=RUN -=WAIT | %u/%u",
-       finished ? "END" : "RUN",total,page+1U,pages);
+   scr_printf("LIBPNG EE MMI | 1024B ALIGNED | %u GROUPS / %u PLANS",
+       screen_groups,(unsigned int)PS2_SCREEN_VARIANTS);
+   for (g=0;g<screen_groups && g<PS2_WIN_CAPACITY;++g)
+      screen_cell(g);
+   screen_counts();
+}
+
+static void
+screen_finish(int failed)
+{
+   if (!screen_ready) screen_init();
+   screen_draw();
+   scr_setfontcolor(0xffffffU);
+   scr_setXY(0,PS2_WIN_COUNTS_Y);
+   scr_printf("GG:GROUP  NN:PLAN#  S:SCALAR  --:N/A  x:WIN RATIO");
+   scr_setXY(0,PS2_WIN_DETAIL_Y);
+   if (ps2_bench_dispatch_passed==0 && ps2_bench_dispatch_failed==0)
+      scr_printf("DISPATCH:N/A  PALETTE:%s",
+          failed?"CHECK LOG":"PASS");
+   else
+      scr_printf("DISPATCH:%u PASS %u FAIL  PALETTE:%s",
+          ps2_bench_dispatch_passed,ps2_bench_dispatch_failed,
+          failed?"CHECK LOG":"PASS");
+   scr_setXY(0,PS2_WIN_DONE_Y);
+   scr_setfontcolor(failed?0x0000ffU:0x00ff00U);
+   scr_printf("DONE: %s | %u PLANS | %u GROUPS",
+       failed?"FAIL":"PASS",(unsigned int)PS2_SCREEN_VARIANTS,
+       screen_groups);
 }
 
 static void
 test_live(const char *name, unsigned int index, unsigned int total,
     unsigned long width, unsigned int passed, unsigned int failed)
 {
-   unsigned int page;
    (void)name;
-   if (index == 0U) return;
-   page = ps2_ab_page_of(index-1U);
-   if (test_page != page) test_draw_page(page, 0, 0);
-   test_draw_row(index-1U);
+   if (!screen_ready) { screen_init(); screen_draw(); }
+   if (index==0U || index>PS2_SCREEN_VARIANTS) return;
+   if (width==1024UL || width==0UL)
+   {
+      screen_cell(screen_group[index-1U]);
+      screen_counts();
+   }
    scr_setfontcolor(0xffffffU);
-   scr_setXY(1, PS2_AB_FOOTER_FIRST_ROW);
-   scr_printf("RUN %u/%u row=%-5lu PASS=%-5u FAIL=%-5u       ",
+   scr_setXY(0,PS2_WIN_COUNTS_Y);
+   scr_printf("RUN:%u/%u  ROW:%-5lu  PASS:%u  FAIL:%u          ",
        index,total,width,passed,failed);
 }
 #endif
@@ -681,11 +691,6 @@ main(void)
 #endif
    printf("libpng PS2 live correctness and benchmark lab\n");
    result = run_filters();
-#ifdef _EE
-   scr_clear();
-   scr_setXY(0, 0);
-   scr_setfontcolor(result ? 0x0000ffU : 0x00ff00U);
-#endif
    printf("\nTEST: %s! code=%d\n", result ? "FAIL" : "OK", result);
 #ifdef PNG_PS2_BENCH_ENABLE
    if (!result) ps2_show_fastest_panel();
@@ -733,23 +738,10 @@ main(void)
 #endif
 #ifdef _EE
 #ifdef PNG_PS2_BENCH_ENABLE
-   {
-      unsigned int page = 0;
-      unsigned int pages = ps2_ab_page_count(
-          (unsigned int)(sizeof ps2_bench_variants /
-          sizeof ps2_bench_variants[0]));
-      /* 3 columns x 17 rows = 51 items per page. The 93-plan lab uses
-       * two pages, both with the same five-line winner summary. */
-      for (;;)
-      {
-         test_draw_page(page, 1, result);
-         sleep(8);
-         page = (page + 1U) % pages;
-      }
-   }
-#else
-   SleepThread();
+   screen_finish(result);
 #endif
+   /* Display persists. No page rotation and no artificial halt text. */
+   SleepThread();
 #endif
    return result;
 }
