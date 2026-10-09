@@ -151,3 +151,5 @@ png_ps2_test_extra(void)
 /* The second suite exercises all standard byte strides, RGB/tRNS,
  * 16-bit and channel conversions, and seven Adam7 pass patterns. */
 #include "test_full_kernels.c"
+#include "extra_color_kernels.c"
+#include "test_color_kernels.c"
