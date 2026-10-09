@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "extra_kernels_mmi.c"
+#include "extra_full_kernels.c"
 
 #define PS2_EXTRA_MAX 1024U
 #define PS2_EXTRA_BUF (4U * PS2_EXTRA_MAX + 64U)
@@ -146,3 +147,7 @@ png_ps2_test_extra(void)
    printf("EXTRA_PASS,write=%lu,palette=%lu\n", write_cases, palette_cases);
    return 0;
 }
+
+/* The second suite exercises all standard byte strides, RGB/tRNS,
+ * 16-bit and channel conversions, and seven Adam7 pass patterns. */
+#include "test_full_kernels.c"
