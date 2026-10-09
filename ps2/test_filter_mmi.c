@@ -602,8 +602,8 @@ test_draw_page(unsigned int page, int finished, int result)
       scr_printf("RUNNING | page %u of %u",page+1U,pages);
    scr_setfontcolor(0xffffffU);
    scr_setXY(1,PS2_AB_LAST_SCREEN_ROW);
-   scr_printf("END / %u candidates | A/B O=PASS X=FAIL ~=RUN -=WAIT | %u/%u",
-       total,page+1U,pages);
+   scr_printf("%s / %u candidates | A/B O=PASS X=FAIL ~=RUN -=WAIT | %u/%u",
+       finished ? "END" : "RUN",total,page+1U,pages);
 }
 
 static void
