@@ -49,6 +49,11 @@ ps2/test_gray_host: ps2/test_gray_host.c ps2/filter_gray_mmi.c
 ps2/test_paeth_mask_host: ps2/test_paeth_host.c ps2/filter_paeth_mmi.c
 	$(CC) $(CFLAGS) -DPNG_PS2_EE_MMI_PAETH_MASK ps2/test_paeth_host.c -o $@
 
+ps2/test_palette_hook_host: ps2/test_palette_hook_host.c ps2/palette_production.c ps2/test_palette_hook.c
+	$(CC) $(CFLAGS) ps2/test_palette_hook_host.c -o $@
+
+test: ps2/test_palette_hook_host
+
 ps2/test_extra_host: ps2/test_extra_host.c ps2/test_extra_kernels.c ps2/extra_kernels_mmi.c ps2/extra_full_kernels.c ps2/test_full_kernels.c ps2/extra_color_kernels.c ps2/test_color_kernels.c
 	$(CC) $(CFLAGS) ps2/test_extra_host.c -o $@
 
@@ -104,6 +109,7 @@ test: ps2/test_up_host ps2/test_up_schedules_host ps2/test_up_2x_host ps2/test_g
 	./ps2/test_wide_sub6_prefix_host
 	./ps2/test_avg4_dual_host
 	./ps2/test_extra_host
+	./ps2/test_palette_hook_host
 	./ps2/test_full_syntax_host
 	./ps2/test_mmi_models
 	./ps2/test_ab_summary_host
@@ -112,6 +118,7 @@ test: ps2/test_up_host ps2/test_up_schedules_host ps2/test_up_2x_host ps2/test_g
 	sh -n ps2/build_filter_variants.sh
 
 clean:
+	$(RM) ps2/test_palette_hook_host
 	$(RM) ps2/test_ab_summary_host
 	$(RM) ps2/test_fused_host
 	$(RM) ps2/test_wide_host ps2/test_wide_words_host ps2/test_wide_prefix_host ps2/test_wide_sub6_prefix_host ps2/test_wide_paeth_mask_host ps2/test_paeth_mask_host ps2/test_avg4_dual_host ps2/test_extra_host ps2/test_full_syntax_host ps2/test_up_host ps2/test_up_schedules_host ps2/test_up_2x_host ps2/test_gray_host ps2/test_gray_prefix_host ps2/test_rgb3_host ps2/test_rgb3_prefix_host ps2/test_paeth_host ps2/test_mmi_models
