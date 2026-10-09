@@ -45,6 +45,29 @@ To repeat host checks with a Windows Python installation, set the Makefile's
 
 ### Fast unified runtime
 
+The final EE screen now declares **SCALAR WIN**, **PLAN A WIN**,
+**PLAN B WIN** (or a later plan letter), **TIE**, or **N/A** beside each
+representative filter. Plan letters identify implementation candidates in
+their *individual filter/bpp family*, in fixed benchmark declaration order:
+
+- `PLAN E WIN  up-4x  41.241x` means that Up's plan E beat the scalar
+  reference in the same 1024-byte, aligned-row shape. The named source is
+  the fastest valid candidate, not a globally selected kernel for all sizes.
+- `SCALAR WIN  sub4-...  1.250x` means scalar won by 1.250x against the
+  fastest measured plan (whose name remains visible for diagnosis).
+- `N/A` means the timer resolution or correctness checks did not support
+  a winner. **One valid plan is enough** to compare against scalar; requiring
+  two MMI plans would wrongly hide single-plan results.
+
+The final `WIN COUNT` counts only the representative rows shown on screen.
+`AUTO_WIN,...` CSV logs the result for *every* valid 64/1024/4096-byte,
+alignment-0/1 group with source name, stable plan letter, net timing, and
+ratio. `AUTO_TOTAL,...` sums representative-screen verdicts. The existing
+`FASTEST,...` lines still rank only MMI candidates, while the old A/B totals
+sum *all* matched measurements and are **not** win counts or a production
+dispatch recommendation. Repeated EE measurements are needed to distinguish
+small timing differences from noise.
+
 The default ELF validates the final scalar/candidate outputs from the timed
 batches directly, including output guards and previous-row preservation.
 All 88 candidates remain available. It checks 18 lengths (short rows and
