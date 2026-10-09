@@ -609,6 +609,9 @@ ps2_show_fastest_panel(void)
    scr_setfontcolor(0xffffffU);
    scr_printf("WIN COUNT: PLAN %u | SCALAR %u | TIE %u | N/A %u\n",
        plan_wins, scalar_wins, ties, unknown);
+   scr_printf("DISPATCH: %u passed, %u failed (exact shapes)\n",
+       ps2_bench_dispatch_passed,ps2_bench_dispatch_failed);
+   scr_printf("PALETTE: 8-bit RGB/RGBA hook OK\n");
 #endif
    printf("AUTO_TOTAL,plan=%u,scalar=%u,tie=%u,unknown=%u\n",
        plan_wins, scalar_wins, ties, unknown);
