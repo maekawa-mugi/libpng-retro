@@ -589,10 +589,10 @@ ps2_bench_batch(ps2_bench_fn fn, png_row_info *ri, png_byte *dst,
    start = ps2_bench_now();
    for (k = 0; k < loops; ++k)
    {
-      memcpy(dst, src, ri->rowbytes);
+      memcpy(dst, src, ps2_bench_input_bytes);
       if (fn != 0)
          fn(ri, dst, prev);
-      ps2_bench_sink += dst[ri->rowbytes - 1];
+      ps2_bench_sink += dst[0];
    }
    finish = ps2_bench_now();
    return ps2_bench_delta(start, finish);
@@ -631,6 +631,10 @@ png_ps2_bench_all(void)
           "scalar_net_ticks,optimized_net_ticks,optimized_ticks_per_byte_x1000\n");
    for (j = 0; j < 1024U; ++j)
       ps2_bench_palette_table[j] = random_byte();
+   for (j = 0; j < 768U; ++j)
+      ps2_bench_rgb_table[j] = random_byte();
+   for (j = 0; j < 256U; ++j)
+      ps2_bench_alpha_table[j] = random_byte();
    ps2_bench_clock_init();
 
    for (index = 0; index < sizeof ps2_bench_variants /
@@ -671,31 +675,39 @@ png_ps2_bench_all(void)
             png_byte *q = saved + ((offsets[oi] * 7U) & 15U);
             unsigned long copy_time, scalar_time, candidate_time;
             unsigned long net_scalar, net_candidate, scaled;
+            size_t previous_bytes, checked_bytes;
             ri.rowbytes = n;
+            ps2_bench_shape(v->filter, v->bpp, n,
+                &ps2_bench_input_bytes, &ps2_bench_output_bytes,
+                &previous_bytes);
+            checked_bytes = ps2_bench_input_bytes > ps2_bench_output_bytes ?
+                ps2_bench_input_bytes : ps2_bench_output_bytes;
+            if (checked_bytes + offsets[oi] + 16 > PS2_BENCH_CAP ||
+                previous_bytes + ((offsets[oi] * 7U) & 15U) + 16 >
+                    PS2_BENCH_CAP)
+               continue;
             ps2_bench_bpp = v->bpp;
             ps2_bench_filter = v->filter;
 
-            for (j = 0; j < n + 16; ++j)
+            for (j = 0; j < ps2_bench_input_bytes + 16; ++j)
+               s[j] = j < ps2_bench_input_bytes ? random_byte() : 0xa5;
+            for (j = 0; j < previous_bytes + 16; ++j)
+               p[j] = j < previous_bytes ? random_byte() : 0x5a;
+            memcpy(q, p, previous_bytes + 16);
+            memcpy(e, s, ps2_bench_input_bytes + 16);
+            memcpy(r, s, ps2_bench_input_bytes + 16);
+            if (ps2_bench_output_bytes > ps2_bench_input_bytes)
             {
-               s[j] = j < n ? random_byte() : 0xa5;
-               p[j] = j < n ? random_byte() : 0x5a;
-            }
-            memcpy(q, p, n + 16);
-            memcpy(e, s, n + 16);
-            memcpy(r, s, n + 16);
-            if (v->filter == PS2_BENCH_PALETTE)
-            {
-               /* Expansion fills 4*n bytes.  Check the entire region
-                * and sixteen sentinel bytes after it. */
-               memset(e + n, 0xa5, 3 * n + 16);
-               memset(r + n, 0xa5, 3 * n + 16);
+               memset(e + ps2_bench_input_bytes + 16, 0xa5,
+                   ps2_bench_output_bytes - ps2_bench_input_bytes);
+               memset(r + ps2_bench_input_bytes + 16, 0xa5,
+                   ps2_bench_output_bytes - ps2_bench_input_bytes);
             }
             ps2_bench_scalar(&ri, e, p);
             v->fn(&ri, r, p);
 
-            if (memcmp(e, r,
-                    (v->filter == PS2_BENCH_PALETTE ? 4 * n : n) + 16) ||
-                memcmp(q, p, n + 16))
+            if (memcmp(e, r, checked_bytes + 16) ||
+                memcmp(q, p, previous_bytes + 16))
             {
                ++fails;
                printf("BENCH_FAIL,%s,%u,%lu,%u\n", v->name,
@@ -713,9 +725,9 @@ png_ps2_bench_all(void)
                 scalar_time - copy_time : 0;
             net_candidate = candidate_time > copy_time ?
                 candidate_time - copy_time : 0;
-            scaled = n && loops ?
+            scaled = ps2_bench_output_bytes && loops ?
                 (unsigned long)(((unsigned long long)net_candidate * 1000ULL) /
-                    ((unsigned long long)n * loops)) : 0;
+                    ((unsigned long long)ps2_bench_output_bytes * loops)) : 0;
             printf("BENCH,%s,%u,%u,%lu,%u,%u,%u,%lu,%lu,%lu,%lu,%lu,%lu\n",
                 v->name, v->filter, v->bpp, (unsigned long)n,
                 offsets[oi], ((offsets[oi] * 7U) & 15U), loops,
