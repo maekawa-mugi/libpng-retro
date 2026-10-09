@@ -628,6 +628,17 @@ screen_finish(int failed)
    scr_printf("DONE: %s | %u PLANS | %u GROUPS",
        failed?"FAIL":"PASS",(unsigned int)PS2_SCREEN_VARIANTS,
        screen_groups);
+#ifdef PNG_PS2_SPR_BENCH
+   scr_setXY(0,23);
+   scr_setfontcolor(png_spr_completed?0x00ff00U:0x0000ffU);
+   if(png_spr_completed)
+      scr_printf("SPR PASS %u cases NA:%u | Up:%u.%02ux Pal:%u.%02ux Adam:%u.%02ux",
+          png_spr_cases_done,png_spr_timer_na,
+          png_spr_ratio_x100[0]/100U,png_spr_ratio_x100[0]%100U,
+          png_spr_ratio_x100[1]/100U,png_spr_ratio_x100[1]%100U,
+          png_spr_ratio_x100[2]/100U,png_spr_ratio_x100[2]%100U);
+   else scr_printf("SPR FAILED/SKIPPED - see SPR_FAIL or SPR_RESULT stdout");
+#endif
 }
 
 static void
