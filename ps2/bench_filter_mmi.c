@@ -33,6 +33,13 @@
 #define PS2_BENCH_RGBA_TO_RGB   19U
 #define PS2_BENCH_ADAM_BYTES    20U
 #define PS2_BENCH_ADAM_BITS     21U
+#define PS2_BENCH_UNPACK_IDX    22U
+#define PS2_BENCH_UNPACK_GRAY   23U
+#define PS2_BENCH_GRAY_RGB      24U
+#define PS2_BENCH_GRAY_RGBA     25U
+#define PS2_BENCH_RGB_TRNS      26U
+#define PS2_BENCH_SWAP_RB16     27U
+#define PS2_BENCH_RGBA_ARGB     28U
 #define PS2_BENCH_ROW_MAX 16384U
 #define PS2_BENCH_CAP   (8U * PS2_BENCH_ROW_MAX + 64U)
 
@@ -160,6 +167,18 @@ ps2_bench_shape(unsigned int filter, unsigned int bpp, size_t n,
          *input = *output = 4*n; break;
       case PS2_BENCH_RGBA_TO_RGB:
          *input = 4*n; *output = 3*n; break;
+      case PS2_BENCH_UNPACK_IDX: case PS2_BENCH_UNPACK_GRAY:
+         *input=(n*bpp+7)/8; *output=n; break;
+      case PS2_BENCH_GRAY_RGB:
+         *output=3*n; break;
+      case PS2_BENCH_GRAY_RGBA:
+         *output=4*n; break;
+      case PS2_BENCH_RGB_TRNS:
+         *input=3*n; *output=4*n; break;
+      case PS2_BENCH_SWAP_RB16:
+         *input=*output=2*n*bpp; break;
+      case PS2_BENCH_RGBA_ARGB:
+         *input=*output=4*n; break;
       case PS2_BENCH_ADAM_BYTES:
          *input = *output = n*bpp;
          *previous = ((n+1)/2)*bpp;
@@ -192,6 +211,56 @@ ps2_bench_write_pae_all(png_row_info *ri, png_byte *r,
 {
    png_ps2_write_filter_packed(r,p,ri->rowbytes,ps2_bench_bpp,2);
 }
+static void
+ps2_bench_unpack_index(png_row_info *ri,png_byte *row,
+    const png_byte *prev)
+{
+   (void)prev;
+   png_ps2_unpack_packed8(row,row,ri->rowbytes,ps2_bench_bpp,0);
+}
+static void
+ps2_bench_unpack_gray(png_row_info *ri,png_byte *row,
+    const png_byte *prev)
+{
+   (void)prev;
+   png_ps2_unpack_packed8(row,row,ri->rowbytes,ps2_bench_bpp,1);
+}
+static void
+ps2_bench_gray_rgb(png_row_info *ri,png_byte *row,
+    const png_byte *prev)
+{
+   (void)prev;
+   png_ps2_gray8_to_rgb(row,row,ri->rowbytes,3,-1);
+}
+static void
+ps2_bench_gray_rgba(png_row_info *ri,png_byte *row,
+    const png_byte *prev)
+{
+   (void)prev;
+   png_ps2_gray8_to_rgb(row,row,ri->rowbytes,4,127);
+}
+static void
+ps2_bench_rgb_trns(png_row_info *ri,png_byte *row,
+    const png_byte *prev)
+{
+   (void)prev;
+   png_ps2_rgb8_trns_to_rgba(row,row,ri->rowbytes,0x11,0x22,0x33);
+}
+static void
+ps2_bench_rb16(png_row_info *ri,png_byte *row,
+    const png_byte *prev)
+{
+   (void)prev;
+   png_ps2_swap_rb16(row,ri->rowbytes,ps2_bench_bpp);
+}
+static void
+ps2_bench_argb(png_row_info *ri,png_byte *row,
+    const png_byte *prev)
+{
+   (void)prev;
+   png_ps2_rgba_to_argb(row,ri->rowbytes);
+}
+
 static void
 ps2_bench_palette_rgb(png_row_info *ri, png_byte *r,
     const png_byte *p)
@@ -333,6 +402,65 @@ ps2_bench_scalar(png_row_info *ri, png_byte *row, const png_byte *prev)
          row[3*i]=a;
          row[3*i+1]=c;
          row[3*i+2]=d;
+      }
+      return;
+   }
+   if (kind == PS2_BENCH_UNPACK_IDX ||
+       kind == PS2_BENCH_UNPACK_GRAY)
+   {
+      unsigned int mask=(1U<<bpp)-1U;
+      for(i=n;i-- > 0;)
+      {
+         size_t bit=i*bpp;
+         unsigned int sample=(row[bit>>3] >>
+             (8U-bpp-(unsigned int)(bit&7U)))&mask;
+         row[i]=(png_byte)(kind==PS2_BENCH_UNPACK_GRAY ?
+             sample*(255U/mask) : sample);
+      }
+      return;
+   }
+   if (kind == PS2_BENCH_GRAY_RGB || kind == PS2_BENCH_GRAY_RGBA)
+   {
+      unsigned int stride=kind==PS2_BENCH_GRAY_RGB?3:4;
+      for(i=n;i-- > 0;)
+      {
+         png_byte sample=row[i];
+         row[stride*i]=sample;
+         row[stride*i+1]=sample;
+         row[stride*i+2]=sample;
+         if(stride==4)row[4*i+3]=(png_byte)(sample==127?0:255);
+      }
+      return;
+   }
+   if (kind == PS2_BENCH_RGB_TRNS)
+   {
+      for(i=n;i-- > 0;)
+      {
+         png_byte a=row[3*i], c=row[3*i+1], d=row[3*i+2];
+         row[4*i]=a;row[4*i+1]=c;row[4*i+2]=d;
+         row[4*i+3]=(png_byte)(a==0x11&&c==0x22&&d==0x33?0:255);
+      }
+      return;
+   }
+   if (kind == PS2_BENCH_SWAP_RB16)
+   {
+      unsigned int stride=2*bpp;
+      for(i=0;i<n;++i)
+      {
+         png_byte h=row[stride*i], l=row[stride*i+1];
+         row[stride*i]=row[stride*i+4];
+         row[stride*i+1]=row[stride*i+5];
+         row[stride*i+4]=h;
+         row[stride*i+5]=l;
+      }
+      return;
+   }
+   if (kind == PS2_BENCH_RGBA_ARGB)
+   {
+      for(i=0;i<n;++i)
+      {
+         png_byte a=row[4*i],c=row[4*i+1],d=row[4*i+2],e=row[4*i+3];
+         row[4*i]=e;row[4*i+1]=a;row[4*i+2]=c;row[4*i+3]=d;
       }
       return;
    }
@@ -514,6 +642,18 @@ static const ps2_bench_variant ps2_bench_variants[] = {
    {"adam7bits1",1,PS2_BENCH_ADAM_BITS,1,ps2_bench_adam_bits},
    {"adam7bits2",2,PS2_BENCH_ADAM_BITS,1,ps2_bench_adam_bits},
    {"adam7bits4",4,PS2_BENCH_ADAM_BITS,1,ps2_bench_adam_bits},
+   {"unpack-index1",1,PS2_BENCH_UNPACK_IDX,1,ps2_bench_unpack_index},
+   {"unpack-index2",2,PS2_BENCH_UNPACK_IDX,1,ps2_bench_unpack_index},
+   {"unpack-index4",4,PS2_BENCH_UNPACK_IDX,1,ps2_bench_unpack_index},
+   {"unpack-gray1",1,PS2_BENCH_UNPACK_GRAY,1,ps2_bench_unpack_gray},
+   {"unpack-gray2",2,PS2_BENCH_UNPACK_GRAY,1,ps2_bench_unpack_gray},
+   {"unpack-gray4",4,PS2_BENCH_UNPACK_GRAY,1,ps2_bench_unpack_gray},
+   {"gray-rgb",1,PS2_BENCH_GRAY_RGB,1,ps2_bench_gray_rgb},
+   {"gray-rgba-trns",1,PS2_BENCH_GRAY_RGBA,1,ps2_bench_gray_rgba},
+   {"rgb-trns-rgba",3,PS2_BENCH_RGB_TRNS,1,ps2_bench_rgb_trns},
+   {"swap-rb16rgb",3,PS2_BENCH_SWAP_RB16,1,ps2_bench_rb16},
+   {"swap-rb16rgba",4,PS2_BENCH_SWAP_RB16,1,ps2_bench_rb16},
+   {"rgba-to-argb",4,PS2_BENCH_RGBA_ARGB,1,ps2_bench_argb},
 
    {"up-mmi", 1, PS2_BENCH_UP, 1, png_read_filter_row_up_ps2},
 #ifdef PNG_PS2_EE_MMI_UP_2X
@@ -693,6 +833,15 @@ png_ps2_bench_all(void)
                s[j] = j < ps2_bench_input_bytes ? random_byte() : 0xa5;
             for (j = 0; j < previous_bytes + 16; ++j)
                p[j] = j < previous_bytes ? random_byte() : 0x5a;
+            if (v->filter == PS2_BENCH_GRAY_RGBA)
+               for (j=0;j<n;j+=7) s[j]=127;
+            if (v->filter == PS2_BENCH_RGB_TRNS)
+               for (j=0;j<n;j+=7)
+               {
+                  s[3*j]=0x11;
+                  s[3*j+1]=0x22;
+                  s[3*j+2]=0x33;
+               }
             memcpy(q, p, previous_bytes + 16);
             memcpy(e, s, ps2_bench_input_bytes + 16);
             memcpy(r, s, ps2_bench_input_bytes + 16);
