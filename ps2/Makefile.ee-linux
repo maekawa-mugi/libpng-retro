@@ -36,6 +36,7 @@ all: $(EE_LINUX_BIN)
 
 $(EE_LINUX_BIN): ps2/test_filter_mmi.c ps2/bench_filter_mmi.c ps2/bench_baseline_mmi.c \
   ps2/test_extra_kernels.c ps2/extra_kernels_mmi.c \
+  ps2/test_full_kernels.c ps2/extra_full_kernels.c \
   ps2/filter_mmi.c ps2/filter_gray_mmi.c ps2/filter_rgb3.c \
   ps2/filter_wide_mmi.c ps2/filter_paeth_mmi.c \
   ps2/filter_sub3_prefix_mmi.c ps2/filter_gray_prefix_mmi.c \
