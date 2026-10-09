@@ -20,6 +20,15 @@ int main(void)
              ps2_win_y(i)==ps2_win_y(j))
             return 3;
    }
-   puts("PASS PS2 71 groups in 72 non-overlapping winner cells");
+   {
+      char cell[32];
+      int n = snprintf(cell,sizeof cell,"%02u:%02u WIN %lu.%03lux",
+          71U,93U,999UL,999UL);
+      if (n != 18 || cell[18] != 0) return 4;
+      n = snprintf(cell,sizeof cell,"%02u:S WIN %lu.%03lux",
+          71U,999UL,999UL);
+      if (n > (int)PS2_WIN_CELL_TEXT) return 5;
+   }
+   puts("PASS PS2 71 groups in 72 non-overlapping winner cells and ratio labels");
    return 0;
 }
