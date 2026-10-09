@@ -375,6 +375,8 @@ main(void)
 #ifdef PNG_PS2_BENCH_ENABLE
    if (png_ps2_test_extra() != 0)
       return 1;
+   if (png_ps2_test_full() != 0)
+      return 1;
    if (png_ps2_bench_all() != 0)
       return 1;
 #endif
