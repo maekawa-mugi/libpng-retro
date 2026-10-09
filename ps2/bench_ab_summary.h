@@ -23,6 +23,7 @@ ps2_bench_ab_ms1000(unsigned long long ticks, unsigned long frequency)
    return ticks / frequency * 1000000ULL +
        (ticks % frequency) * 1000000ULL / frequency;
 }
+
 /* A contest compares the *fastest passing plan* and scalar on an identical
  * row shape. The plan's ordinal is stable within its filter/bpp family.
  * No winner is claimed if subtraction of replay-copy time yielded zero.
