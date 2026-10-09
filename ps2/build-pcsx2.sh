@@ -60,6 +60,12 @@ flags=(-O2 -march=r5900 -G0 -D_EE -std=c99 -Wall -Wextra -Werror
        -DPNG_PS2_EE_MMI_SUB4_UNROLL4 -DPNG_PS2_EE_MMI_AVG4_DUAL
        -DPNG_PS2_EE_MMI_GRAY_AVG -DPNG_PS2_EE_MMI_WIDE_AVG
        -DPNG_PS2_EE_MMI_PAETH -DPNG_PS2_EE_MMI_PAETH_MASK)
+if [[ ${PNG_PS2_SPR_BENCH:-1} == 1 ]]; then
+    flags+=(-DPNG_PS2_SPR_BENCH)
+elif [[ ${PNG_PS2_SPR_BENCH:-1} != 0 ]]; then
+    echo "PNG_PS2_SPR_BENCH must be 0 or 1" >&2
+    exit 2
+fi
 name=auto-fastest
 "$cc" "${flags[@]}" -c "$source_dir/ps2/test_filter_mmi.c" -o "$output_dir/$name.o"
 "$cc" -march=r5900 -G0 "-B$crt_dir/" "-T$linkfile" \
