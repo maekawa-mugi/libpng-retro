@@ -122,6 +122,7 @@ test: ps2/test_up_host ps2/test_up_schedules_host ps2/test_up_2x_host ps2/test_g
 	./ps2/test_ab_summary_host
 	./ps2/test_fused_host
 	$(PYTHON) -m unittest discover -s ps2 -p test_analyze_bench.py
+	$(PYTHON) -m unittest discover -s ps2 -p test_analyze_spr.py
 	sh -n ps2/build_filter_variants.sh
 
 clean:
