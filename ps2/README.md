@@ -33,7 +33,7 @@ PS2DEV/PS2SDK values override these paths. GCC 15.2.0 successfully built:
   **only two rotating pages**, with ten representative `PLAN X WIN` /
   `SCALAR WIN` summaries pinned in five double-column rows on **both**
   pages. Page switching happens every eight seconds after completion.
-  `A:O/B:O` is abbreviated to `AOB O` without spaces (`AOBO`),
+  Per-candidate `A:O / B:O` is abbreviated to `AOBO`,
   while `X`, `~`, and `-` mean fail, running, and waiting. Full
   candidate names, per-side timings, all alignment/width results and
   individual error details remain in stdout CSV (not discarded).
@@ -68,8 +68,7 @@ dense 3-column layout. With 93 candidates this means exactly **two
 pages**, not eleven. The winning plan/scalar verdicts are repeated at
 the top of each page in two columns (ten winners in five rows), so
 switching candidate pages never hides the answers. Candidate cells are
-`NN name AOB O` (without spaces between the two status pairs), e.g.
-`037 sub4-prefix-dir AOBO`; `A` is the scalar reference and `B`
+`NN name AOBO`, e.g. `37 sub4-prefix-dir AOBO`; `A` is the scalar reference and `B`
 is the candidate. Long names are truncated **on screen only**, and
 `RESULT` / `BENCH` / `FASTEST` / `AUTO_WIN` CSV records retain all
 original values. The page rotation interval is eight seconds.
