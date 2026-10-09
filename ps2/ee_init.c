@@ -8,10 +8,19 @@
 
 #include "filter_mmi.c"
 
+/* The experimentally measured Up-4x path is opt-in for production.  It
+ * includes its own safe alignment prologue and scalar fallback for short
+ * rows.  The standalone autotuning ELF compares it independently. */
+#ifdef PNG_PS2_EE_MMI_UP_4X
+#include "filter_up4_mmi.c"
+#endif
+
 static void
 png_init_filter_functions_ps2(png_struct *pp, unsigned int bpp)
 {
-#ifdef PNG_PS2_EE_MMI_UP_2X
+#ifdef PNG_PS2_EE_MMI_UP_4X
+   pp->read_filter[PNG_FILTER_VALUE_UP-1] = png_read_filter_row_up_4x_ps2;
+#elif defined(PNG_PS2_EE_MMI_UP_2X)
    pp->read_filter[PNG_FILTER_VALUE_UP-1] = png_read_filter_row_up_2x_ps2;
 #else
    pp->read_filter[PNG_FILTER_VALUE_UP-1] = png_read_filter_row_up_ps2;
@@ -34,7 +43,11 @@ png_init_filter_functions_ps2(png_struct *pp, unsigned int bpp)
    {
       pp->read_filter[PNG_FILTER_VALUE_SUB-1] = png_read_filter_row_sub4_ps2;
       pp->read_filter[PNG_FILTER_VALUE_AVG-1] = png_read_filter_row_avg4_ps2;
-#ifdef PNG_PS2_EE_MMI_PAETH
+/* The unqualified Paeth4 MMI candidate was slower than the scalar
+       * baseline at 1024B on PCSX2.  Preserve libpng's generic Paeth4
+       * dispatch unless a future benchmark explicitly justifies forcing
+       * this implementation.  Other bpp Paeth candidates are unchanged. */
+#if defined(PNG_PS2_EE_MMI_PAETH) && defined(PNG_PS2_EE_MMI_PAETH4_FORCE)
       pp->read_filter[PNG_FILTER_VALUE_PAETH-1] =
           png_read_filter_row_paeth4_ps2;
 #endif

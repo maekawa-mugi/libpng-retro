@@ -61,6 +61,16 @@ static void candidate(png_row_info *ri, png_byte *r, const png_byte *p)
 }
 int main(void)
 {
+   /* Copy-adjusted benchmark selection must reject a one-off low outlier,
+    * including the zero-tick artifact that creates fictional speedups. */
+   {
+      unsigned long three[3] = {100UL, 1UL, 101UL};
+      unsigned long equal[3] = {8UL, 8UL, 8UL};
+      unsigned long single[1] = {77UL};
+      assert(ps2_bench_median(three, 3) == 100UL);
+      assert(ps2_bench_median(equal, 3) == 8UL);
+      assert(ps2_bench_median(single, 1) == 77UL);
+   }
    assert(png_ps2_bench_all() == 0);
    assert(ps2_bench_ab.completed && ps2_bench_ab.cases == 8U * 18U * 7U);
    assert(updates == 8U * 20U);

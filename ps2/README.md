@@ -598,6 +598,39 @@ configuration and the all-opt-in source configuration. The GCC-only
 `syntax-ee-gcc` target parses the actual inline-assembly operands in
 both configurations without assembling R5900 instructions.
 
+## Production dispatch after PCSX2 comparison
+
+The standalone `auto-fastest.elf` benchmarks all Up/Paeth candidates, but
+its winner list does **not** automatically rewrite the libpng production
+dispatch. On the matched 1024-byte, aligned-row PCSX2 sample, `up-4x`
+won and scalar Paeth4 beat the experimental packed Paeth4. The production
+`ps2/ee_init.c` backend now supports **explicit opt-in**
+`PNG_PS2_EE_MMI_UP_4X`, with priority over `PNG_PS2_EE_MMI_UP_2X`.
+The 4x kernel's alignment and short-row fallback are unchanged. Example
+for a libpng build that already enables the PS2 EE target:
+
+```sh
+# Add these as target-specific C compiler flags:
+-DPNG_PS2_EE_MMI_UP_4X
+```
+
+When `PNG_PS2_EE_MMI_PAETH` is enabled, production keeps libpng's
+existing **scalar Paeth4** dispatch by default, while all other bpp
+Paeth candidates remain available under that flag. The previous
+Paeth4 kernel is still in the standalone ELF's A/B sweep. Define
+`PNG_PS2_EE_MMI_PAETH4_FORCE` alongside
+`PNG_PS2_EE_MMI_PAETH` only to explicitly force the experimental
+Paeth4 backend for further research.
+
+Representative benchmarks now use **paired A/B timing**, alternate
+scalar-vs-candidate execution order, and select the **median of up to
+three copy-adjusted repetitions** rather than the single lowest time
+of separately gathered copy/scalar/candidate samples. Nonrepresentative
+widths retain one measured correctness batch. This limits lucky
+zero-duration measurements and warmed-cache bias, but the raw `clock()`
+timer may still be coarse; cycle-counter validation and end-to-end
+PNG measurements remain necessary before declaring universal speedups.
+
 ## One-run automatic fastest-kernel selection (all PRs integrated)
 
 **Build once, boot once, no runtime arguments:** after configuring PS2SDK,
@@ -618,8 +651,9 @@ At completion, the ELF emits `FASTEST,...` entries comparing the **same
 filter, bpp, rowbytes and pointer alignment** (64, 1024 and 4096 bytes;
 aligned and 1-byte offset); `AUTO,...` is the on-screen readable summary
 for the 1024-byte aligned cases. A missing/low-resolution timer shows N/A,
-not a fictional speedup. Three repetitions are used for these representative
-widths, while corner-case lengths use one correctness+timetable batch.
+not a fictional speedup. Three paired, order-alternated repetitions are used for these representative
+widths, with the median net cost reported; corner-case lengths retain one
+correctness-and-timing batch.
 
 The extra `Up` alternatives are original 1x, original 2x, interleaved 2x
 loads, prefetch 1x, prefetch 2x, 4x, and prefetch 4x. These alternatives
