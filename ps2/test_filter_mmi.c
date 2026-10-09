@@ -493,6 +493,19 @@ screen_init(void)
       if (g==screen_groups) screen_first[screen_groups++]=i;
       screen_group[i]=g;
    }
+   /* Ordinal-only scoreboard; preserve a complete, stable ID->name map
+    * in stdout without consuming a single row on the EE display. */
+   printf("GROUP_MAP_HEADER,group,filter,bpp\n");
+   for (g=0;g<screen_groups;++g)
+   {
+      const ps2_bench_variant *v=&ps2_bench_variants[screen_first[g]];
+      printf("GROUP_MAP,%u,%u,%u\n",g+1U,v->filter,v->bpp);
+   }
+   printf("PLAN_MAP_HEADER,id,group,filter,bpp,name\n");
+   for (i=0;i<PS2_SCREEN_VARIANTS;++i)
+      printf("PLAN_MAP,%u,%u,%u,%u,%s\n",i+1U,screen_group[i]+1U,
+          ps2_bench_variants[i].filter,ps2_bench_variants[i].bpp,
+          ps2_bench_variants[i].name);
    screen_ready=1;
 }
 
