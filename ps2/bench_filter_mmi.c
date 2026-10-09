@@ -266,47 +266,130 @@ ps2_bench_adam_bits(png_row_info *ri, png_byte *r,
 static void
 ps2_bench_scalar(png_row_info *ri, png_byte *row, const png_byte *prev)
 {
-   size_t i;
-   if (ps2_bench_filter == PS2_BENCH_PALETTE)
+   size_t i, n = ri->rowbytes;
+   unsigned int kind = ps2_bench_filter, bpp = ps2_bench_bpp;
+
+   if (kind == PS2_BENCH_PALETTE || kind == PS2_BENCH_PAL_RGB ||
+       kind == PS2_BENCH_PAL_TRNS)
    {
-      for (i = ri->rowbytes; i-- > 0;)
+      unsigned int stride = kind == PS2_BENCH_PAL_RGB ? 3 : 4;
+      for (i = n; i-- > 0;)
       {
          png_byte index = row[i];
-         memcpy(row + 4 * i,
-             ps2_bench_palette_table + 4 * (size_t)index, 4);
+         if (kind == PS2_BENCH_PALETTE)
+            memcpy(row + 4*i, ps2_bench_palette_table+4*(size_t)index, 4);
+         else
+         {
+            memcpy(row + stride*i, ps2_bench_rgb_table+3*(size_t)index, 3);
+            if (kind == PS2_BENCH_PAL_TRNS)
+               row[4*i+3] = ps2_bench_alpha_table[index];
+         }
       }
       return;
    }
-   /* Encoding kernels operate in reverse so their left predictor is
-    * the original row data rather than previously written residuals. */
-   if (ps2_bench_filter >= PS2_BENCH_WRITE_UP)
+   if (kind == PS2_BENCH_SWAP16)
    {
-      for (i = ri->rowbytes; i-- > 0;)
+      for (i=0;i<n;++i)
       {
-         unsigned int a = i >= ps2_bench_bpp ?
-             row[i - ps2_bench_bpp] : 0;
-         unsigned int b = prev[i];
-         unsigned int c = i >= ps2_bench_bpp ?
-             prev[i - ps2_bench_bpp] : 0;
-         unsigned int predictor =
-             ps2_bench_filter == PS2_BENCH_WRITE_UP ? b :
-             ps2_bench_filter == PS2_BENCH_WRITE_SUB4 ? a :
-             ps2_bench_filter == PS2_BENCH_WRITE_AVG4 ? (a + b) >> 1 :
-             ps2_bench_paeth(a, b, c);
-         row[i] = (png_byte)((unsigned int)row[i] - predictor);
+         png_byte a=row[2*i];
+         row[2*i]=row[2*i+1];
+         row[2*i+1]=a;
       }
       return;
    }
-   for (i = 0; i < ri->rowbytes; ++i)
+   if (kind == PS2_BENCH_STRIP16)
    {
-      unsigned int a = i >= ps2_bench_bpp ? row[i - ps2_bench_bpp] : 0;
-      unsigned int b = prev[i];
-      unsigned int c = i >= ps2_bench_bpp ? prev[i - ps2_bench_bpp] : 0;
-      unsigned int predictor = ps2_bench_filter == PS2_BENCH_SUB ? a :
-          ps2_bench_filter == PS2_BENCH_UP ? b :
-          ps2_bench_filter == PS2_BENCH_AVG ? (a + b) >> 1 :
-          ps2_bench_paeth(a, b, c);
-      row[i] = (png_byte)((unsigned int)row[i] + predictor);
+      for (i=0;i<n;++i) row[i]=row[2*i];
+      return;
+   }
+   if (kind == PS2_BENCH_RGB_SWAP || kind == PS2_BENCH_RGBA_SWAP)
+   {
+      unsigned int stride=kind==PS2_BENCH_RGB_SWAP?3:4;
+      for (i=0;i<n;++i)
+      {
+         png_byte a=row[stride*i];
+         row[stride*i]=row[stride*i+2];
+         row[stride*i+2]=a;
+      }
+      return;
+   }
+   if (kind == PS2_BENCH_RGB_TO_RGBA)
+   {
+      for (i=n;i-- > 0;)
+      {
+         png_byte a=row[3*i], c=row[3*i+1], d=row[3*i+2];
+         row[4*i]=a;
+         row[4*i+1]=c;
+         row[4*i+2]=d;
+         row[4*i+3]=0x7f;
+      }
+      return;
+   }
+   if (kind == PS2_BENCH_RGBA_TO_RGB)
+   {
+      for (i=0;i<n;++i)
+      {
+         png_byte a=row[4*i], c=row[4*i+1], d=row[4*i+2];
+         row[3*i]=a;
+         row[3*i+1]=c;
+         row[3*i+2]=d;
+      }
+      return;
+   }
+   if (kind == PS2_BENCH_ADAM_BYTES)
+   {
+      for (i=0;i<n;i+=2)
+         memcpy(row+i*bpp,prev+(i/2)*bpp,bpp);
+      return;
+   }
+   if (kind == PS2_BENCH_ADAM_BITS)
+   {
+      size_t k=0;
+      for (i=0;i<n;i+=2,++k)
+      {
+         unsigned int j;
+         for (j=0;j<bpp;++j)
+         {
+            size_t srcbit=k*bpp+j, dstbit=i*bpp+j;
+            unsigned int bit=(prev[srcbit>>3]>>(7U-(srcbit&7U)))&1U;
+            png_byte mask=(png_byte)(1U<<(7U-(dstbit&7U)));
+            row[dstbit>>3]=(png_byte)((row[dstbit>>3]&~mask)|
+                (bit?mask:0U));
+         }
+      }
+      return;
+   }
+
+   if ((kind >= PS2_BENCH_WRITE_UP && kind <= PS2_BENCH_WRITE_PAETH) ||
+       (kind >= PS2_BENCH_WRITE_SUB_ALL &&
+        kind <= PS2_BENCH_WRITE_PAE_ALL))
+   {
+      for (i=n;i-- > 0;)
+      {
+         unsigned int a=i>=bpp?row[i-bpp]:0, up=prev[i];
+         unsigned int c=i>=bpp?prev[i-bpp]:0;
+         unsigned int predictor =
+             kind==PS2_BENCH_WRITE_UP ? up :
+             kind==PS2_BENCH_WRITE_SUB4 ||
+                 kind==PS2_BENCH_WRITE_SUB_ALL ? a :
+             kind==PS2_BENCH_WRITE_AVG4 ||
+                 kind==PS2_BENCH_WRITE_AVG_ALL ? (a+up)>>1 :
+             ps2_bench_paeth(a,up,c);
+         row[i]=(png_byte)((unsigned int)row[i]-predictor);
+      }
+      return;
+   }
+
+   for (i=0;i<n;++i)
+   {
+      unsigned int a=i>=bpp?row[i-bpp]:0, up=prev[i];
+      unsigned int c=i>=bpp?prev[i-bpp]:0;
+      unsigned int predictor =
+          kind==PS2_BENCH_SUB?a:
+          kind==PS2_BENCH_UP?up:
+          kind==PS2_BENCH_AVG?(a+up)>>1:
+          ps2_bench_paeth(a,up,c);
+      row[i]=(png_byte)((unsigned int)row[i]+predictor);
    }
 }
 
@@ -392,10 +475,46 @@ ps2_bench_palette_expand(png_row_info *ri, png_byte *row,
 
 static const ps2_bench_variant ps2_bench_variants[] = {
    {"write-up-mmi", 1, PS2_BENCH_WRITE_UP, 1, png_ps2_write_up_mmi},
+   {"write-sub1-packed", 1, PS2_BENCH_WRITE_SUB_ALL, 1, ps2_bench_write_sub_all},
+   {"write-avg1-packed", 1, PS2_BENCH_WRITE_AVG_ALL, 1, ps2_bench_write_avg_all},
+   {"write-paeth1-packed", 1, PS2_BENCH_WRITE_PAE_ALL, 1, ps2_bench_write_pae_all},
+   {"write-sub2-packed", 2, PS2_BENCH_WRITE_SUB_ALL, 1, ps2_bench_write_sub_all},
+   {"write-avg2-packed", 2, PS2_BENCH_WRITE_AVG_ALL, 1, ps2_bench_write_avg_all},
+   {"write-paeth2-packed", 2, PS2_BENCH_WRITE_PAE_ALL, 1, ps2_bench_write_pae_all},
+   {"write-sub3-packed", 3, PS2_BENCH_WRITE_SUB_ALL, 1, ps2_bench_write_sub_all},
+   {"write-avg3-packed", 3, PS2_BENCH_WRITE_AVG_ALL, 1, ps2_bench_write_avg_all},
+   {"write-paeth3-packed", 3, PS2_BENCH_WRITE_PAE_ALL, 1, ps2_bench_write_pae_all},
+   {"write-sub4-packed", 4, PS2_BENCH_WRITE_SUB_ALL, 1, ps2_bench_write_sub_all},
+   {"write-avg4-packed", 4, PS2_BENCH_WRITE_AVG_ALL, 1, ps2_bench_write_avg_all},
+   {"write-paeth4-packed", 4, PS2_BENCH_WRITE_PAE_ALL, 1, ps2_bench_write_pae_all},
+   {"write-sub6-packed", 6, PS2_BENCH_WRITE_SUB_ALL, 1, ps2_bench_write_sub_all},
+   {"write-avg6-packed", 6, PS2_BENCH_WRITE_AVG_ALL, 1, ps2_bench_write_avg_all},
+   {"write-paeth6-packed", 6, PS2_BENCH_WRITE_PAE_ALL, 1, ps2_bench_write_pae_all},
+   {"write-sub8-packed", 8, PS2_BENCH_WRITE_SUB_ALL, 1, ps2_bench_write_sub_all},
+   {"write-avg8-packed", 8, PS2_BENCH_WRITE_AVG_ALL, 1, ps2_bench_write_avg_all},
+   {"write-paeth8-packed", 8, PS2_BENCH_WRITE_PAE_ALL, 1, ps2_bench_write_pae_all},
    {"write-sub4-mmi", 4, PS2_BENCH_WRITE_SUB4, 1, png_ps2_write_sub4_mmi},
    {"write-avg4-mmi", 4, PS2_BENCH_WRITE_AVG4, 1, png_ps2_write_avg4_mmi},
    {"write-paeth4-mmi", 4, PS2_BENCH_WRITE_PAETH, 1, png_ps2_write_paeth4_mmi},
    {"palette-rgba4", 1, PS2_BENCH_PALETTE, 1, ps2_bench_palette_expand},
+   {"palette-rgb3", 1, PS2_BENCH_PAL_RGB, 1, ps2_bench_palette_rgb},
+   {"palette-trns-rgba", 1, PS2_BENCH_PAL_TRNS, 1, ps2_bench_palette_trns},
+   {"swap16", 2, PS2_BENCH_SWAP16, 1, ps2_bench_swap16},
+   {"strip16", 2, PS2_BENCH_STRIP16, 1, ps2_bench_strip16},
+   {"rgb-bgr", 3, PS2_BENCH_RGB_SWAP, 1, ps2_bench_swap_rgb},
+   {"rgba-bgra", 4, PS2_BENCH_RGBA_SWAP, 1, ps2_bench_swap_rgba},
+   {"rgb-rgba", 3, PS2_BENCH_RGB_TO_RGBA, 1, ps2_bench_rgb_to_rgba},
+   {"rgba-rgb", 4, PS2_BENCH_RGBA_TO_RGB, 1, ps2_bench_rgba_to_rgb},
+   {"adam7bytes1",1,PS2_BENCH_ADAM_BYTES,1,ps2_bench_adam_bytes},
+   {"adam7bytes2",2,PS2_BENCH_ADAM_BYTES,1,ps2_bench_adam_bytes},
+   {"adam7bytes3",3,PS2_BENCH_ADAM_BYTES,1,ps2_bench_adam_bytes},
+   {"adam7bytes4",4,PS2_BENCH_ADAM_BYTES,1,ps2_bench_adam_bytes},
+   {"adam7bytes6",6,PS2_BENCH_ADAM_BYTES,1,ps2_bench_adam_bytes},
+   {"adam7bytes8",8,PS2_BENCH_ADAM_BYTES,1,ps2_bench_adam_bytes},
+   {"adam7bits1",1,PS2_BENCH_ADAM_BITS,1,ps2_bench_adam_bits},
+   {"adam7bits2",2,PS2_BENCH_ADAM_BITS,1,ps2_bench_adam_bits},
+   {"adam7bits4",4,PS2_BENCH_ADAM_BITS,1,ps2_bench_adam_bits},
+
    {"up-mmi", 1, PS2_BENCH_UP, 1, png_read_filter_row_up_ps2},
 #ifdef PNG_PS2_EE_MMI_UP_2X
    {"up-2x-direct", 1, PS2_BENCH_UP, 16, png_read_filter_row_up_2x_ps2},
