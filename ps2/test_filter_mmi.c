@@ -19,16 +19,7 @@ static void test_log(const char *format, ...)
    va_start(args, format);
    vsnprintf(message, sizeof message, format, args);
    va_end(args);
-   /* CSV stays on stdout; drawing thousands of rows dominates EE runtime. */
-   /* Screen uses fixed progress and final winner panel. Keep the CSV
-    * streaming to stdout without flooding the PS2 debug renderer. */
-   if (strncmp(message, "BENCH", 5) != 0 &&
-       strncmp(message, "FUSED", 5) != 0 &&
-       strncmp(message, "FASTEST", 7) != 0 &&
-       strncmp(message, "AUTO,", 5) != 0 &&
-       strncmp(message, "AUTO_", 5) != 0 &&
-       strncmp(message, "RESULT", 6) != 0)
-      scr_printf("%s", message);
+   /* stdout only; the debug screen is drawn with fixed coordinates. */
    printf("%s", message);
    if (strncmp(message, "BENCH", 5) != 0 ||
        strncmp(message, "BENCH_DONE", 10) == 0 ||
@@ -455,113 +446,216 @@ run_filters(void)
 #endif
 }
 
+#ifdef PNG_PS2_BENCH_ENABLE
+/* The exact same fixed ten contest shapes are emitted to CSV and shown at
+ * the top of BOTH results pages. No third summary page is needed. */
+typedef struct
+{
+   const char *label;
+   unsigned int filter, bpp;
+} ps2_bench_target;
+static const ps2_bench_target ps2_bench_targets[] = {
+   {"Up", PS2_BENCH_UP, 1},
+   {"Sub1", PS2_BENCH_SUB, 1},
+   {"Sub2", PS2_BENCH_SUB, 2},
+   {"Sub3", PS2_BENCH_SUB, 3},
+   {"Sub4", PS2_BENCH_SUB, 4},
+   {"Sub6", PS2_BENCH_SUB, 6},
+   {"Sub8", PS2_BENCH_SUB, 8},
+   {"Avg4", PS2_BENCH_AVG, 4},
+   {"Paeth4", PS2_BENCH_PAETH, 4},
+   {"WrSub4", PS2_BENCH_WRITE_SUB4, 4}
+};
+#endif
+
 #if defined(_EE) && defined(PNG_PS2_BENCH_ENABLE)
-/* Match the OpenSSL suite-table layout, nine items per screen. */
-#define PS2_AB_PAGE_SIZE 9U
-static unsigned int test_page = ~0U;
+#include "compact_layout.h"
+#define PS2_SCREEN_VARIANTS \
+   (sizeof ps2_bench_variants / sizeof ps2_bench_variants[0])
+static unsigned int screen_first[PS2_SCREEN_VARIANTS];
+static unsigned int screen_group[PS2_SCREEN_VARIANTS];
+static unsigned int screen_groups;
+static int screen_ready;
+
 static void
-test_draw_row(unsigned int index)
+screen_init(void)
 {
-   const ps2_bench_ab_result *item = &ps2_bench_results[index];
-   unsigned int side, row = 5U + (index % PS2_AB_PAGE_SIZE) * 2U;
-   scr_setfontcolor(0xffffffU);
-   scr_setXY(2, row - 1);
-   scr_printf("%-52.52s", ps2_bench_variants[index].name);
-   for (side = 0; side < 2; ++side)
+   unsigned int i,g;
+   screen_groups=0;
+   for (i=0;i<PS2_SCREEN_VARIANTS;++i)
    {
-      unsigned int state = item->failures[side] ? PS2_AB_FAIL : item->state[side];
-      unsigned long long ms = ps2_bench_ab_ms1000(item->ticks[side], PS2_BENCH_FREQUENCY);
-      scr_setXY(side ? 29 : 3, row);
-      scr_setfontcolor(state == PS2_AB_PASS ? 0x00ff00U :
-          state == PS2_AB_FAIL ? 0x0000ffU :
-          state == PS2_AB_RUNNING ? 0x00ffffU : 0xffffffU);
-      if (state == PS2_AB_WAIT)
-         scr_printf("%c: WAIT                 ", 'A' + side);
-      else if (state == PS2_AB_RUNNING)
-         scr_printf("%c: RUNNING              ", 'A' + side);
+      const ps2_bench_variant *v=&ps2_bench_variants[i];
+      for (g=0;g<screen_groups;++g)
+      {
+         const ps2_bench_variant *other=&ps2_bench_variants[screen_first[g]];
+         if (v->filter==other->filter && v->bpp==other->bpp) break;
+      }
+      if (g==screen_groups) screen_first[screen_groups++]=i;
+      screen_group[i]=g;
+   }
+   /* Ordinal-only scoreboard; preserve a complete, stable ID->name map
+    * in stdout without consuming a single row on the EE display. */
+   printf("GROUP_MAP_HEADER,group,filter,bpp\n");
+   for (g=0;g<screen_groups;++g)
+   {
+      const ps2_bench_variant *v=&ps2_bench_variants[screen_first[g]];
+      printf("GROUP_MAP,%u,%u,%u\n",g+1U,v->filter,v->bpp);
+   }
+   printf("PLAN_MAP_HEADER,id,group,filter,bpp,name\n");
+   for (i=0;i<PS2_SCREEN_VARIANTS;++i)
+      printf("PLAN_MAP,%u,%u,%u,%u,%s\n",i+1U,screen_group[i]+1U,
+          ps2_bench_variants[i].filter,ps2_bench_variants[i].bpp,
+          ps2_bench_variants[i].name);
+   screen_ready=1;
+}
+
+static unsigned int
+screen_plan_id(const ps2_bench_variant *v, const char *name)
+{
+   unsigned int i;
+   if (!name) return 0;
+   for (i=0;i<PS2_SCREEN_VARIANTS;++i)
+      if (ps2_bench_variants[i].filter==v->filter &&
+          ps2_bench_variants[i].bpp==v->bpp &&
+          strcmp(ps2_bench_variants[i].name,name)==0) return i+1U;
+   return 0;
+}
+
+/* 1024-byte aligned row: one unique (filter,bpp) contest per cell.
+ * 'GG:NN WIN 43.3x' means group GG, candidate NN in stdout MAP.
+ * Other timings and alignments remain available in unabridged CSV. */
+static void
+screen_cell(unsigned int g)
+{
+   const ps2_bench_variant *v;
+   const ps2_bench_winner *win;
+   enum ps2_bench_verdict verdict;
+   unsigned long ratio;
+   unsigned int id;
+   char t[32];
+   if (g>=screen_groups || g>=PS2_WIN_CAPACITY) return;
+   v=&ps2_bench_variants[screen_first[g]];
+   win=&ps2_bench_winners[v->filter][v->bpp][1][0];
+   verdict=win->name ? ps2_bench_verdict(win->reference_ticks,win->net_ticks) :
+       PS2_BENCH_UNMEASURED;
+   ratio=ps2_bench_winner_ratio_x1000(win->reference_ticks,win->net_ticks);
+   id=screen_plan_id(v,win->name);
+   if (verdict==PS2_BENCH_PLAN_WIN && id)
+   {
+      if (ratio>=1000000UL)
+         snprintf(t,sizeof t,"%02u:%02u WIN >999x",g+1U,id);
       else
-         scr_printf("%c: %c (%9llu.%03llu ms) ", 'A' + side,
-             state == PS2_AB_PASS ? 'O' : 'X', ms / 1000ULL, ms % 1000ULL);
+         snprintf(t,sizeof t,"%02u:%02u WIN %lu.%01lux",
+             g+1U,id,ratio/1000UL,(ratio%1000UL)/100UL);
    }
-   scr_setfontcolor(0xffffffU);
-}
-static void
-test_draw_page(unsigned int page, int finished, int result)
-{
-   unsigned int i, total = sizeof ps2_bench_variants / sizeof ps2_bench_variants[0];
-   scr_clear();
-   test_page = page;
-   scr_setfontcolor(0xffffffU);
-   scr_setXY(2, 0);
-   scr_printf("libpng PS2 A/B tests + timing\n");
-   scr_setXY(2, 1);
-   scr_printf("A: generic C   B: MMI candidates\n");
-   scr_setXY(2, 2);
-   scr_printf("Time: this item's workload, copy subtracted\n");
-   scr_setXY(2, 3);
-   scr_printf("Page %u/%u  (%u candidates)", page + 1,
-       (total + PS2_AB_PAGE_SIZE - 1) / PS2_AB_PAGE_SIZE, total);
-   for (i = page * PS2_AB_PAGE_SIZE;
-        i < total && i < (page + 1) * PS2_AB_PAGE_SIZE; ++i)
-      test_draw_row(i);
-   if (finished)
+   else if (verdict==PS2_BENCH_SCALAR_WIN)
    {
-      scr_setXY(2, 23);
-      scr_setfontcolor(result ? 0x0000ffU : 0x00ff00U);
-      scr_printf("TEST: %s!  %s", result ? "FAIL" : "OK",
-          result ? "see red X items" : "all items passed");
-      scr_setXY(2, 24);
-      scr_setfontcolor(0x00ff00U);
-      scr_printf("END!  Result pages change every 4 seconds");
+      if (ratio>=1000000UL)
+         snprintf(t,sizeof t,"%02u:S WIN >999x",g+1U);
+      else
+         snprintf(t,sizeof t,"%02u:S WIN %lu.%01lux",
+             g+1U,ratio/1000UL,(ratio%1000UL)/100UL);
    }
-   scr_setfontcolor(0xffffffU);
+   else if (verdict==PS2_BENCH_TIE)
+      snprintf(t,sizeof t,"%02u:= TIE",g+1U);
+   else
+      snprintf(t,sizeof t,"%02u:-- N/A",g+1U);
+   scr_setfontcolor(verdict==PS2_BENCH_PLAN_WIN?0x00ff00U:
+       verdict==PS2_BENCH_SCALAR_WIN?0x00ffffU:
+       verdict==PS2_BENCH_TIE?0xffffffU:0x808080U);
+   scr_setXY(ps2_win_x(g),ps2_win_y(g));
+   /* 18 chars max and no newline: never reach rightmost cell or wrap. */
+   scr_printf("%-18.18s",t);
 }
+
+static void
+screen_counts(void)
+{
+   unsigned int g,plan=0,scalar=0,tie=0,unknown=0;
+   for (g=0;g<screen_groups;++g)
+   {
+      const ps2_bench_variant *v=&ps2_bench_variants[screen_first[g]];
+      const ps2_bench_winner *w=&ps2_bench_winners[v->filter][v->bpp][1][0];
+      enum ps2_bench_verdict verdict=w->name ?
+          ps2_bench_verdict(w->reference_ticks,w->net_ticks):
+          PS2_BENCH_UNMEASURED;
+      if (verdict==PS2_BENCH_PLAN_WIN) ++plan;
+      else if (verdict==PS2_BENCH_SCALAR_WIN) ++scalar;
+      else if (verdict==PS2_BENCH_TIE) ++tie;
+      else ++unknown;
+   }
+   scr_setXY(0,PS2_WIN_STATUS_Y);
+   scr_setfontcolor(0xffffffU);
+   scr_printf("PLAN WIN:%u  SCALAR WIN:%u  TIE:%u  N/A:%u       ",
+       plan,scalar,tie,unknown);
+}
+
+static void
+screen_draw(void)
+{
+   unsigned int g;
+   scr_clear();
+   scr_setXY(0,0);
+   scr_setfontcolor(0xffffffU);
+   scr_printf("LIBPNG EE MMI | 1024B ALIGNED | %u GROUPS / %u PLANS",
+       screen_groups,(unsigned int)PS2_SCREEN_VARIANTS);
+   for (g=0;g<screen_groups && g<PS2_WIN_CAPACITY;++g)
+      screen_cell(g);
+   screen_counts();
+}
+
+static void
+screen_finish(int failed)
+{
+   if (!screen_ready) screen_init();
+   screen_draw();
+   scr_setfontcolor(0xffffffU);
+   scr_setXY(0,PS2_WIN_COUNTS_Y);
+   scr_printf("GG:GROUP  NN:PLAN#  S:SCALAR  --:N/A  x:WIN RATIO");
+   scr_setXY(0,PS2_WIN_DETAIL_Y);
+   if (ps2_bench_dispatch_passed==0 && ps2_bench_dispatch_failed==0)
+      scr_printf("DISPATCH:N/A  PALETTE:%s",
+          failed?"CHECK LOG":"PASS");
+   else
+      scr_printf("DISPATCH:%u PASS %u FAIL  PALETTE:%s",
+          ps2_bench_dispatch_passed,ps2_bench_dispatch_failed,
+          failed?"CHECK LOG":"PASS");
+   scr_setXY(0,PS2_WIN_DONE_Y);
+   scr_setfontcolor(failed?0x0000ffU:0x00ff00U);
+   scr_printf("DONE: %s | %u PLANS | %u GROUPS",
+       failed?"FAIL":"PASS",(unsigned int)PS2_SCREEN_VARIANTS,
+       screen_groups);
+}
+
 static void
 test_live(const char *name, unsigned int index, unsigned int total,
     unsigned long width, unsigned int passed, unsigned int failed)
 {
-   unsigned int page = (index - 1) / PS2_AB_PAGE_SIZE;
    (void)name;
-   if (test_page != page) test_draw_page(page, 0, 0);
-   test_draw_row(index - 1);
+   if (!screen_ready) { screen_init(); screen_draw(); }
+   if (index==0U || index>PS2_SCREEN_VARIANTS) return;
+   if (width==1024UL || width==0UL)
+   {
+      screen_cell(screen_group[index-1U]);
+      screen_counts();
+   }
    scr_setfontcolor(0xffffffU);
-   scr_setXY(2, 23);
-   scr_printf("Item %u/%u row=%-5lu PASS=%-5u FAIL=%-5u   ",
-       index, total, width, passed, failed);
+   scr_setXY(0,PS2_WIN_COUNTS_Y);
+   scr_printf("RUN:%u/%u  ROW:%-5lu  PASS:%u  FAIL:%u          ",
+       index,total,width,passed,failed);
 }
 #endif
 #ifdef PNG_PS2_BENCH_ENABLE
 static void
 ps2_show_fastest_panel(void)
 {
-   static const struct
-   {
-      const char *label;
-      unsigned int filter, bpp;
-   } targets[] = {
-      {"Up", PS2_BENCH_UP, 1},
-      {"Sub1", PS2_BENCH_SUB, 1},
-      {"Sub2", PS2_BENCH_SUB, 2},
-      {"Sub3", PS2_BENCH_SUB, 3},
-      {"Sub4", PS2_BENCH_SUB, 4},
-      {"Sub6", PS2_BENCH_SUB, 6},
-      {"Sub8", PS2_BENCH_SUB, 8},
-      {"Average4", PS2_BENCH_AVG, 4},
-      {"Paeth4", PS2_BENCH_PAETH, 4},
-      {"Write Sub4", PS2_BENCH_WRITE_SUB4, 4}
-   };
    unsigned int i, scalar_wins = 0, plan_wins = 0, ties = 0, unknown = 0;
-#ifdef _EE
-   scr_setfontcolor(0xffffffU);
-   scr_printf("AUTO WINNERS: 1024 B / align 0 (vs scalar)\n");
-   scr_printf("Best PLAN name shown even when SCALAR wins\n");
-#endif
    /* AUTO_HEADER is logged but not echoed a second time to the screen. */
    printf("AUTO_HEADER,1024,0,scalar-versus-fastest-plan\n");
-   for (i=0;i<sizeof targets/sizeof targets[0];++i)
+   for (i=0;i<sizeof ps2_bench_targets/sizeof ps2_bench_targets[0];++i)
    {
       const ps2_bench_winner *win =
-         &ps2_bench_winners[targets[i].filter][targets[i].bpp][1][0];
+         &ps2_bench_winners[ps2_bench_targets[i].filter][ps2_bench_targets[i].bpp][1][0];
       enum ps2_bench_verdict verdict = win->name ?
           ps2_bench_verdict(win->reference_ticks, win->net_ticks) :
           PS2_BENCH_UNMEASURED;
@@ -589,34 +683,11 @@ ps2_show_fastest_panel(void)
          ++unknown;
          snprintf(outcome, sizeof outcome, "N/A");
       }
-#ifdef _EE
-      scr_setfontcolor(verdict == PS2_BENCH_PLAN_WIN ? 0x00ff00U :
-          verdict == PS2_BENCH_SCALAR_WIN ? 0x00ffffU : 0xffffffU);
-      if (verdict == PS2_BENCH_UNMEASURED)
-         scr_printf("%-10.10s %-11.11s %-24.24s   --\n",
-             targets[i].label, outcome, win->name ? win->name : "-");
-      else
-         scr_printf("%-10.10s %-11.11s %-24.24s %lu.%03lux\n",
-             targets[i].label, outcome, win->name, ratio/1000UL,
-             ratio%1000UL);
-#endif
       printf("AUTO,%s,%s,%s,%lu.%03lux,plan=%c,competitors=%u\n",
-          targets[i].label, outcome, win->name ? win->name : "-",
+          ps2_bench_targets[i].label, outcome, win->name ? win->name : "-",
           ratio/1000UL,ratio%1000UL,
           ps2_bench_plan_letter(win->plan_index), win->eligible);
    }
-#ifdef _EE
-   scr_setfontcolor(0xffffffU);
-   scr_printf("WIN COUNT: PLAN %u | SCALAR %u | TIE %u | N/A %u\n",
-       plan_wins, scalar_wins, ties, unknown);
-   if (ps2_bench_dispatch_passed == 0U &&
-       ps2_bench_dispatch_failed == 0U)
-      scr_printf("DISPATCH: N/A (insufficient clock precision)\n");
-   else
-      scr_printf("DISPATCH: %u passed, %u failed (exact shapes)\n",
-          ps2_bench_dispatch_passed,ps2_bench_dispatch_failed);
-   scr_printf("PALETTE: 8-bit RGB/RGBA hook OK\n");
-#endif
    printf("AUTO_TOTAL,plan=%u,scalar=%u,tie=%u,unknown=%u\n",
        plan_wins, scalar_wins, ties, unknown);
 }
@@ -633,11 +704,6 @@ main(void)
 #endif
    printf("libpng PS2 live correctness and benchmark lab\n");
    result = run_filters();
-#ifdef _EE
-   scr_clear();
-   scr_setXY(0, 0);
-   scr_setfontcolor(result ? 0x0000ffU : 0x00ff00U);
-#endif
    printf("\nTEST: %s! code=%d\n", result ? "FAIL" : "OK", result);
 #ifdef PNG_PS2_BENCH_ENABLE
    if (!result) ps2_show_fastest_panel();
@@ -685,21 +751,10 @@ main(void)
 #endif
 #ifdef _EE
 #ifdef PNG_PS2_BENCH_ENABLE
-   {
-      unsigned int page = 0;
-      unsigned int pages = (sizeof ps2_bench_variants / sizeof ps2_bench_variants[0]
-          + PS2_AB_PAGE_SIZE - 1) / PS2_AB_PAGE_SIZE;
-      /* Preserve every item's result and allow all pages to be read. */
-      for (;;)
-      {
-         test_draw_page(page, 1, result);
-         sleep(4);
-         page = (page + 1) % pages;
-      }
-   }
-#else
-   SleepThread();
+   screen_finish(result);
 #endif
+   /* Display persists. No page rotation and no artificial halt text. */
+   SleepThread();
 #endif
    return result;
 }
