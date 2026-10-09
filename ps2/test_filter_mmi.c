@@ -377,6 +377,8 @@ main(void)
       return 1;
    if (png_ps2_test_full() != 0)
       return 1;
+   if (png_ps2_test_color() != 0)
+      return 1;
    if (png_ps2_bench_all() != 0)
       return 1;
 #endif
