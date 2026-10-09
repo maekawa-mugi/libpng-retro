@@ -8,5 +8,6 @@ typedef struct { size_t rowbytes; } png_row_info;
 int main(void)
 {
    if (png_ps2_test_extra() != 0) return 1;
-   return png_ps2_test_full();
+   if (png_ps2_test_full() != 0) return 1;
+   return png_ps2_test_color();
 }
