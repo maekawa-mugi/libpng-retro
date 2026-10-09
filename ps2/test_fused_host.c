@@ -67,13 +67,14 @@ int main(void)
    /* A contest never ranks unlike problems; ensure fast wins a matched
     * shape while a missing timer result cannot win. */
    memset(ps2_bench_winners, 0, sizeof ps2_bench_winners);
-   ps2_bench_consider("slow", PS2_BENCH_UP, 1, 1024, 0, 30, 60);
-   ps2_bench_consider("fast", PS2_BENCH_UP, 1, 1024, 0, 10, 60);
-   ps2_bench_consider("invalid", PS2_BENCH_UP, 1, 1024, 0, 0, 60);
-   ps2_bench_consider("unrelated", PS2_BENCH_SUB, 1, 1024, 0, 1, 60);
+   ps2_bench_consider("slow", PS2_BENCH_UP, 1, 1024, 0, 30, 60, 0);
+   ps2_bench_consider("fast", PS2_BENCH_UP, 1, 1024, 0, 10, 60, 1);
+   ps2_bench_consider("invalid", PS2_BENCH_UP, 1, 1024, 0, 0, 60, 2);
+   ps2_bench_consider("unrelated", PS2_BENCH_SUB, 1, 1024, 0, 1, 60, 0);
    assert(strcmp(ps2_bench_winners[PS2_BENCH_UP][1][1][0].name,
        "fast") == 0);
    assert(ps2_bench_winners[PS2_BENCH_UP][1][1][0].eligible == 2);
+   assert(ps2_bench_winners[PS2_BENCH_UP][1][1][0].plan_index == 1);
    assert(strcmp(ps2_bench_winners[PS2_BENCH_SUB][1][1][0].name,
        "unrelated") == 0);
    puts("PASS fused sweep, progress, output/canary/input failure detection");
