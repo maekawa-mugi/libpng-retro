@@ -53,7 +53,9 @@ def parse(lines: list[str]) -> tuple[list[Sample], list[str], dict[str, int], st
             statuses["correctness_pass_lines"] += 1
         elif line.startswith("EXTRA_PASS,"):
             statuses["extra_pass_lines"] += 1
-        elif line.startswith("FAIL") or line.startswith("BENCH_FAIL,") or line.startswith("EXTRA_FAIL,"):
+        elif line.startswith("FULL_PASS,"):
+            statuses["full_pass_lines"] += 1
+        elif line.startswith("FAIL") or line.startswith("BENCH_FAIL,") or line.startswith("EXTRA_FAIL,") or line.startswith("FULL_FAIL,"):
             issues.append(f"line {line_no}: {line}")
         elif line.startswith("BENCH_INFO,"):
             for token in line.split(",")[1:]:
@@ -100,6 +102,7 @@ def analyze(lines: list[str], top: int = 20) -> tuple[int, list[Sample]]:
     print(
         f"Correctness PASS lines: {statuses['correctness_pass_lines']}; "
         f"extra PASS lines: {statuses['extra_pass_lines']}; "
+        f"full PASS lines: {statuses['full_pass_lines']}; "
         f"completed benchmark runs: {statuses['benchmark_runs_completed']}; "
         f"rows: {len(samples)}; failures: {len(issues)}"
     )
@@ -107,6 +110,8 @@ def analyze(lines: list[str], top: int = 20) -> tuple[int, list[Sample]]:
         issues.append("No correctness PASS line in the supplied log")
     if not statuses["extra_pass_lines"]:
         issues.append("No EXTRA_PASS line: forward/palette tests may not have run")
+    if not statuses["full_pass_lines"]:
+        issues.append("No FULL_PASS line: complete kernel matrix may not have run")
     if not statuses["benchmark_runs_completed"]:
         issues.append("No BENCH_DONE line: output may be incomplete")
     if not samples:
