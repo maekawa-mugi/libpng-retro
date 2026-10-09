@@ -455,113 +455,184 @@ run_filters(void)
 #endif
 }
 
+#ifdef PNG_PS2_BENCH_ENABLE
+/* The exact same fixed ten contest shapes are emitted to CSV and shown at
+ * the top of BOTH results pages. No third summary page is needed. */
+typedef struct
+{
+   const char *label;
+   unsigned int filter, bpp;
+} ps2_bench_target;
+static const ps2_bench_target ps2_bench_targets[] = {
+   {"Up", PS2_BENCH_UP, 1},
+   {"Sub1", PS2_BENCH_SUB, 1},
+   {"Sub2", PS2_BENCH_SUB, 2},
+   {"Sub3", PS2_BENCH_SUB, 3},
+   {"Sub4", PS2_BENCH_SUB, 4},
+   {"Sub6", PS2_BENCH_SUB, 6},
+   {"Sub8", PS2_BENCH_SUB, 8},
+   {"Avg4", PS2_BENCH_AVG, 4},
+   {"Paeth4", PS2_BENCH_PAETH, 4},
+   {"WrSub4", PS2_BENCH_WRITE_SUB4, 4}
+};
+#endif
+
 #if defined(_EE) && defined(PNG_PS2_BENCH_ENABLE)
-/* Match the OpenSSL suite-table layout, nine items per screen. */
-#define PS2_AB_PAGE_SIZE 9U
+#include "compact_layout.h"
 static unsigned int test_page = ~0U;
+
+/* Each candidate occupies only ONE cell: number, shortened unique-ish name
+ * and independent scalar/plan correctness marks. Full names, timings and
+ * alignment-level ranking remain unabridged in the serial CSV output. */
+static char
+test_state_mark(unsigned int state)
+{
+   switch (state)
+   {
+      case PS2_AB_PASS: return 'O';
+      case PS2_AB_FAIL: return 'X';
+      case PS2_AB_RUNNING: return '~';
+      default: return '-';
+   }
+}
+
 static void
 test_draw_row(unsigned int index)
 {
    const ps2_bench_ab_result *item = &ps2_bench_results[index];
-   unsigned int side, row = 5U + (index % PS2_AB_PAGE_SIZE) * 2U;
-   scr_setfontcolor(0xffffffU);
-   scr_setXY(2, row - 1);
-   scr_printf("%-52.52s", ps2_bench_variants[index].name);
-   for (side = 0; side < 2; ++side)
-   {
-      unsigned int state = item->failures[side] ? PS2_AB_FAIL : item->state[side];
-      unsigned long long ms = ps2_bench_ab_ms1000(item->ticks[side], PS2_BENCH_FREQUENCY);
-      scr_setXY(side ? 29 : 3, row);
-      scr_setfontcolor(state == PS2_AB_PASS ? 0x00ff00U :
-          state == PS2_AB_FAIL ? 0x0000ffU :
-          state == PS2_AB_RUNNING ? 0x00ffffU : 0xffffffU);
-      if (state == PS2_AB_WAIT)
-         scr_printf("%c: WAIT                 ", 'A' + side);
-      else if (state == PS2_AB_RUNNING)
-         scr_printf("%c: RUNNING              ", 'A' + side);
-      else
-         scr_printf("%c: %c (%9llu.%03llu ms) ", 'A' + side,
-             state == PS2_AB_PASS ? 'O' : 'X', ms / 1000ULL, ms % 1000ULL);
-   }
-   scr_setfontcolor(0xffffffU);
+   const unsigned int a = item->failures[0] ? PS2_AB_FAIL : item->state[0];
+   const unsigned int b = item->failures[1] ? PS2_AB_FAIL : item->state[1];
+   const unsigned int x = ps2_ab_x_of(index);
+   const unsigned int row = ps2_ab_row_of(index);
+   scr_setXY(x, row);
+   scr_setfontcolor(a == PS2_AB_FAIL || b == PS2_AB_FAIL ? 0x0000ffU :
+       a == PS2_AB_PASS && b == PS2_AB_PASS ? 0x00ff00U :
+       a == PS2_AB_RUNNING || b == PS2_AB_RUNNING ? 0x00ffffU :
+       0xffffffU);
+   scr_printf("%02u %-16.16s A%cB%c", index+1U,
+       ps2_bench_variants[index].name, test_state_mark(a),
+       test_state_mark(b));
 }
+
+/* Five rows, two columns: the ten representative 1024-byte winner verdicts
+ * are ALWAYS visible on every result page, including Scalar victories. */
+static void
+test_draw_winners(void)
+{
+   unsigned int i;
+   for (i=0;i<sizeof ps2_bench_targets / sizeof ps2_bench_targets[0];++i)
+   {
+      const ps2_bench_target *target = &ps2_bench_targets[i];
+      const ps2_bench_winner *win =
+         &ps2_bench_winners[target->filter][target->bpp][1][0];
+      enum ps2_bench_verdict verdict = win->name ?
+          ps2_bench_verdict(win->reference_ticks, win->net_ticks) :
+          PS2_BENCH_UNMEASURED;
+      unsigned long ratio = ps2_bench_winner_ratio_x1000(
+          win->reference_ticks, win->net_ticks);
+      char outcome[12];
+      char speed[8];
+      if (verdict == PS2_BENCH_PLAN_WIN)
+         snprintf(outcome, sizeof outcome, "PLAN %c WIN",
+             ps2_bench_plan_letter(win->plan_index));
+      else if (verdict == PS2_BENCH_SCALAR_WIN)
+         snprintf(outcome, sizeof outcome, "SCALAR WIN");
+      else if (verdict == PS2_BENCH_TIE)
+         snprintf(outcome, sizeof outcome, "TIE");
+      else
+         snprintf(outcome, sizeof outcome, "N/A");
+
+      if (verdict == PS2_BENCH_UNMEASURED)
+         snprintf(speed, sizeof speed, "--");
+      else if (ratio >= 1000000UL)
+         snprintf(speed, sizeof speed, ">999x");
+      else
+         snprintf(speed, sizeof speed, "%lu.%02lux",
+             ratio/1000UL, (ratio%1000UL)/10UL);
+
+      scr_setXY(i < PS2_AB_SUMMARY_ROWS ? 1U :
+          PS2_AB_SUMMARY_RIGHT_X,
+          PS2_AB_SUMMARY_FIRST_ROW + (i % PS2_AB_SUMMARY_ROWS));
+      scr_setfontcolor(verdict == PS2_BENCH_PLAN_WIN ? 0x00ff00U :
+          verdict == PS2_BENCH_SCALAR_WIN ? 0x00ffffU : 0xffffffU);
+      scr_printf("%-6.6s %-10.10s %-12.12s %7.7s",
+          target->label, outcome, win->name ? win->name : "-", speed);
+   }
+}
+
 static void
 test_draw_page(unsigned int page, int finished, int result)
 {
-   unsigned int i, total = sizeof ps2_bench_variants / sizeof ps2_bench_variants[0];
+   unsigned int i, total =
+      (unsigned int)(sizeof ps2_bench_variants / sizeof ps2_bench_variants[0]);
+   unsigned int pages = ps2_ab_page_count(total);
    scr_clear();
    test_page = page;
    scr_setfontcolor(0xffffffU);
-   scr_setXY(2, 0);
-   scr_printf("libpng PS2 A/B tests + timing\n");
-   scr_setXY(2, 1);
-   scr_printf("A: generic C   B: MMI candidates\n");
-   scr_setXY(2, 2);
-   scr_printf("Time: this item's workload, copy subtracted\n");
-   scr_setXY(2, 3);
-   scr_printf("Page %u/%u  (%u candidates)", page + 1,
-       (total + PS2_AB_PAGE_SIZE - 1) / PS2_AB_PAGE_SIZE, total);
-   for (i = page * PS2_AB_PAGE_SIZE;
-        i < total && i < (page + 1) * PS2_AB_PAGE_SIZE; ++i)
+   scr_setXY(1,0);
+   scr_printf("libpng EE MMI | 1024B aligned winners | %u/%u | %u plans",
+       page+1U,pages,total);
+   if (finished)
+      test_draw_winners();
+   else
+   {
+      scr_setXY(1,1);
+      scr_printf("A = scalar, B = MMI | one candidate per cell");
+      scr_setXY(1,2);
+      scr_printf("O passed / X failed / ~ running / - waiting");
+   }
+   for (i=page*PS2_AB_PAGE_SIZE;
+       i<total && i<(page+1U)*PS2_AB_PAGE_SIZE;++i)
       test_draw_row(i);
+
+   scr_setfontcolor(finished && !result ? 0x00ff00U : 0xffffffU);
+   scr_setXY(1,PS2_AB_FOOTER_FIRST_ROW);
    if (finished)
    {
-      scr_setXY(2, 23);
-      scr_setfontcolor(result ? 0x0000ffU : 0x00ff00U);
-      scr_printf("TEST: %s!  %s", result ? "FAIL" : "OK",
-          result ? "see red X items" : "all items passed");
-      scr_setXY(2, 24);
-      scr_setfontcolor(0x00ff00U);
-      scr_printf("END!  Result pages change every 4 seconds");
+      if (ps2_bench_dispatch_passed == 0U &&
+          ps2_bench_dispatch_failed == 0U)
+         scr_printf("TEST:%s | DISPATCH:N/A | PALETTE:%s",
+             result ? "FAIL" : "OK", result ? "CHECK LOG" : "OK");
+      else
+         scr_printf("TEST:%s | DISPATCH:%u OK %u FAIL | PALETTE:%s",
+             result ? "FAIL" : "OK", ps2_bench_dispatch_passed,
+             ps2_bench_dispatch_failed, result ? "CHECK LOG" : "OK");
    }
+   else
+      scr_printf("RUNNING | page %u of %u",page+1U,pages);
    scr_setfontcolor(0xffffffU);
+   scr_setXY(1,PS2_AB_LAST_SCREEN_ROW);
+   scr_printf("END / %u candidates | A/B O=PASS X=FAIL ~=RUN -=WAIT | %u/%u",
+       total,page+1U,pages);
 }
+
 static void
 test_live(const char *name, unsigned int index, unsigned int total,
     unsigned long width, unsigned int passed, unsigned int failed)
 {
-   unsigned int page = (index - 1) / PS2_AB_PAGE_SIZE;
+   unsigned int page;
    (void)name;
+   if (index == 0U) return;
+   page = ps2_ab_page_of(index-1U);
    if (test_page != page) test_draw_page(page, 0, 0);
-   test_draw_row(index - 1);
+   test_draw_row(index-1U);
    scr_setfontcolor(0xffffffU);
-   scr_setXY(2, 23);
-   scr_printf("Item %u/%u row=%-5lu PASS=%-5u FAIL=%-5u   ",
-       index, total, width, passed, failed);
+   scr_setXY(1, PS2_AB_FOOTER_FIRST_ROW);
+   scr_printf("RUN %u/%u row=%-5lu PASS=%-5u FAIL=%-5u       ",
+       index,total,width,passed,failed);
 }
 #endif
 #ifdef PNG_PS2_BENCH_ENABLE
 static void
 ps2_show_fastest_panel(void)
 {
-   static const struct
-   {
-      const char *label;
-      unsigned int filter, bpp;
-   } targets[] = {
-      {"Up", PS2_BENCH_UP, 1},
-      {"Sub1", PS2_BENCH_SUB, 1},
-      {"Sub2", PS2_BENCH_SUB, 2},
-      {"Sub3", PS2_BENCH_SUB, 3},
-      {"Sub4", PS2_BENCH_SUB, 4},
-      {"Sub6", PS2_BENCH_SUB, 6},
-      {"Sub8", PS2_BENCH_SUB, 8},
-      {"Average4", PS2_BENCH_AVG, 4},
-      {"Paeth4", PS2_BENCH_PAETH, 4},
-      {"Write Sub4", PS2_BENCH_WRITE_SUB4, 4}
-   };
    unsigned int i, scalar_wins = 0, plan_wins = 0, ties = 0, unknown = 0;
-#ifdef _EE
-   scr_setfontcolor(0xffffffU);
-   scr_printf("AUTO WINNERS: 1024 B / align 0 (vs scalar)\n");
-   scr_printf("Best PLAN name shown even when SCALAR wins\n");
-#endif
    /* AUTO_HEADER is logged but not echoed a second time to the screen. */
    printf("AUTO_HEADER,1024,0,scalar-versus-fastest-plan\n");
-   for (i=0;i<sizeof targets/sizeof targets[0];++i)
+   for (i=0;i<sizeof ps2_bench_targets/sizeof ps2_bench_targets[0];++i)
    {
       const ps2_bench_winner *win =
-         &ps2_bench_winners[targets[i].filter][targets[i].bpp][1][0];
+         &ps2_bench_winners[ps2_bench_targets[i].filter][ps2_bench_targets[i].bpp][1][0];
       enum ps2_bench_verdict verdict = win->name ?
           ps2_bench_verdict(win->reference_ticks, win->net_ticks) :
           PS2_BENCH_UNMEASURED;
@@ -589,34 +660,11 @@ ps2_show_fastest_panel(void)
          ++unknown;
          snprintf(outcome, sizeof outcome, "N/A");
       }
-#ifdef _EE
-      scr_setfontcolor(verdict == PS2_BENCH_PLAN_WIN ? 0x00ff00U :
-          verdict == PS2_BENCH_SCALAR_WIN ? 0x00ffffU : 0xffffffU);
-      if (verdict == PS2_BENCH_UNMEASURED)
-         scr_printf("%-10.10s %-11.11s %-24.24s   --\n",
-             targets[i].label, outcome, win->name ? win->name : "-");
-      else
-         scr_printf("%-10.10s %-11.11s %-24.24s %lu.%03lux\n",
-             targets[i].label, outcome, win->name, ratio/1000UL,
-             ratio%1000UL);
-#endif
       printf("AUTO,%s,%s,%s,%lu.%03lux,plan=%c,competitors=%u\n",
-          targets[i].label, outcome, win->name ? win->name : "-",
+          ps2_bench_targets[i].label, outcome, win->name ? win->name : "-",
           ratio/1000UL,ratio%1000UL,
           ps2_bench_plan_letter(win->plan_index), win->eligible);
    }
-#ifdef _EE
-   scr_setfontcolor(0xffffffU);
-   scr_printf("WIN COUNT: PLAN %u | SCALAR %u | TIE %u | N/A %u\n",
-       plan_wins, scalar_wins, ties, unknown);
-   if (ps2_bench_dispatch_passed == 0U &&
-       ps2_bench_dispatch_failed == 0U)
-      scr_printf("DISPATCH: N/A (insufficient clock precision)\n");
-   else
-      scr_printf("DISPATCH: %u passed, %u failed (exact shapes)\n",
-          ps2_bench_dispatch_passed,ps2_bench_dispatch_failed);
-   scr_printf("PALETTE: 8-bit RGB/RGBA hook OK\n");
-#endif
    printf("AUTO_TOTAL,plan=%u,scalar=%u,tie=%u,unknown=%u\n",
        plan_wins, scalar_wins, ties, unknown);
 }
@@ -687,14 +735,16 @@ main(void)
 #ifdef PNG_PS2_BENCH_ENABLE
    {
       unsigned int page = 0;
-      unsigned int pages = (sizeof ps2_bench_variants / sizeof ps2_bench_variants[0]
-          + PS2_AB_PAGE_SIZE - 1) / PS2_AB_PAGE_SIZE;
-      /* Preserve every item's result and allow all pages to be read. */
+      unsigned int pages = ps2_ab_page_count(
+          (unsigned int)(sizeof ps2_bench_variants /
+          sizeof ps2_bench_variants[0]));
+      /* 3 columns x 17 rows = 51 items per page. The 93-plan lab uses
+       * two pages, both with the same five-line winner summary. */
       for (;;)
       {
          test_draw_page(page, 1, result);
-         sleep(4);
-         page = (page + 1) % pages;
+         sleep(8);
+         page = (page + 1U) % pages;
       }
    }
 #else
