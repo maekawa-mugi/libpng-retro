@@ -78,3 +78,21 @@ png_init_filter_functions_ps2(png_struct *pp, unsigned int bpp)
 }
 
 #define png_target_init_filter_functions_impl png_init_filter_functions_ps2
+
+/* The libpng palette target hook receives the already-allocated output
+ * row buffer and must set row_info exactly as the generic fallback would.
+ * Enable only for 8-bit indexed source rows; packed 1/2/4-bit rows
+ * transparently fall back to libpng's own PNG transformation. */
+#ifdef PNG_TARGET_IMPLEMENTS_EXPAND_PALETTE
+#include "palette_production.c"
+static int
+png_target_do_expand_palette_ps2(png_struct *pp, png_row_info *ri,
+    png_byte *row, const png_color *palette,
+    const png_byte *trans_alpha, int num_trans)
+{
+   PNG_UNUSED(pp);
+   return png_ps2_expand_palette_row_8(ri, row,
+       palette, trans_alpha, num_trans);
+}
+#define png_target_do_expand_palette_impl png_target_do_expand_palette_ps2
+#endif
