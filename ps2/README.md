@@ -1,5 +1,30 @@
 # PS2 Emotion Engine MMI backend
 
+## EE MMI winner-first display (single screen)
+
+The **`auto-fastest.elf` scoreboard shows all 71 filter/bpp contests on
+one 80x25 PS2 screen** (four columns by eighteen rows). Each cell contains
+only a group number, winning plan ID (or `S` for scalar), `WIN`, and
+speed ratio, such as `01:57 WIN 43.3x` or `09:S WIN 1.5x`.
+`-- N/A` means the timer cannot establish a valid win, and `= TIE`
+means equal recorded net time. These are **1024-byte aligned** contests,
+not global recommendations for all image sizes.
+
+Groups update **live** as each benchmark reaches the 1024-byte shape.
+The bottom line changes to **`DONE: PASS`** or **`DONE: FAIL`** when all
+correctness checks and benchmarks finish. There is no rotating page
+carousel, no `AOBO` correctness wall, and no artificial halt message.
+The correctness checks still run; only the screen presentation changed.
+
+`GROUP_MAP,<group>,<filter>,<bpp>` and
+`PLAN_MAP,<id>,<group>,<filter>,<bpp>,<name>` preserve the
+full ID-to-implementation mapping in stdout. The original
+`RESULT`, `BENCH`, `FASTEST`, and `AUTO_WIN` CSV lines also retain
+all exact timings and names. All debug output goes to stdout, not
+the coordinate-based framebuffer screen. Each 18-character scoreboard
+cell stops before the final text columns to avoid line-wrap/white-box
+artifacts. `test_compact_layout_host` checks the 72-cell geometry.
+
 ## Integrated PR #1–#7 on the mmi branch
 
 The `mmi` branch combines all seven MMI PRs and the local per-item A/B
@@ -28,16 +53,10 @@ PS2DEV/PS2SDK values override these paths. GCC 15.2.0 successfully built:
   not the accumulated time across all 88 candidates or whole-PNG decoding.
   Representative autotuning shapes use three measurements per batch;
   other shapes use one. Zero timing does not change test status.
-  The compact 80-column EE screen now shows **51 candidates per page**
-  (three columns, 17 one-line rows per column). The 93-plan lab uses
-  **only two rotating pages**, with ten representative `PLAN X WIN` /
-  `SCALAR WIN` summaries pinned in five double-column rows on **both**
-  pages. Page switching happens every eight seconds after completion.
-  Per-candidate `A:O / B:O` is abbreviated to `AOBO`,
-  while `X`, `~`, and `-` mean fail, running, and waiting. Full
-  candidate names, per-side timings, all alignment/width results and
-  individual error details remain in stdout CSV (not discarded).
-  The bottom line reports test, dispatch, and palette status on each page.
+  The current winner-first screen has 71 contests in one fixed table,
+  with only winning plan numbers, Scalar wins and ratios. No page
+  rotation or A/B candidate list. The full per-item status/timing
+  remains in stdout CSV. The final footer is DONE: PASS/FAIL.
   The fused checks continue after a mismatch to finish each item's matrix
   and preserve distinct A/B results. All screen rendering is outside timing.
   CSV and per-item `RESULT` records go to stdout without drawing each log row.
@@ -63,17 +82,10 @@ To repeat host checks with a Windows Python installation, set the Makefile's
 
 ### Fast unified runtime
 
-The **results display now fits 51 candidates in one page** using a
-dense 3-column layout. With 93 candidates this means exactly **two
-pages**, not eleven. The winning plan/scalar verdicts are repeated at
-the top of each page in two columns (ten winners in five rows), so
-switching candidate pages never hides the answers. Candidate cells are
-`NN name AOBO`, e.g. `37 sub4-prefix-dir AOBO`; `A` is the scalar reference and `B`
-is the candidate. Long names are truncated **on screen only**, and
-`RESULT` / `BENCH` / `FASTEST` / `AUTO_WIN` CSV records retain all
-original values. The page rotation interval is eight seconds.
-`ps2/test_compact_layout_host.c` checks page capacity, layout bounds
-and distinct cell coordinates independently on GCC/Clang.
+The newest display uses **four columns of numeric winner results on
+one screen** (up to 72 unique filter/bpp contests). Candidate-by-candidate
+A/B checks still run but no longer crowd the screen. Final **DONE: PASS**
+is unambiguous. See the winner-first display section above.
 
 
 The final EE screen now declares **SCALAR WIN**, **PLAN A WIN**,
