@@ -870,21 +870,244 @@ ps2_bench_batch(ps2_bench_fn fn, png_row_info *ri, png_byte *dst,
    return ps2_bench_delta(start, finish);
 }
 
+/* Use paired copy/scalar/candidate measurements per repetition rather
+ * than the minimum of independently timed copy/scalar/candidate rounds.
+ * A minimum amplifies scheduling noise, particularly after subtracting
+ * the replay-copy cost.  Alternate A/B order to reduce warmed-cache and
+ * clock-drift preference; take the median net time of up to nine pairs. */
+#define PS2_BENCH_MAX_TIMING_ROUNDS 9U
 static unsigned long
-ps2_bench_best(ps2_bench_fn fn, png_row_info *ri, png_byte *dst,
-    const png_byte *src, const png_byte *prev, unsigned int loops)
+ps2_bench_median(unsigned long *samples, unsigned int count)
 {
+   unsigned int i, j;
+   for (i = 1; i < count; ++i)
+   {
+      unsigned long value = samples[i];
+      j = i;
+      while (j != 0 && samples[j - 1] > value)
+      {
+         samples[j] = samples[j - 1];
+         --j;
+      }
+      samples[j] = value;
+   }
+   return samples[count >> 1];
+}
+
+static void
+ps2_bench_matched_timing(png_row_info *ri, png_byte *candidate_dst,
+    png_byte *scalar_dst, const png_byte *source,
+    png_byte *previous, const png_byte *previous_snapshot,
+    size_t previous_bytes, unsigned int loops, ps2_bench_fn candidate,
+    unsigned long *copy_time, unsigned long *scalar_time,
+    unsigned long *candidate_time, unsigned long *scalar_net,
+    unsigned long *candidate_net, int *scalar_prev_write,
+    int *candidate_prev_write)
+{
+   unsigned long copies[PS2_BENCH_MAX_TIMING_ROUNDS];
+   unsigned long scalar[PS2_BENCH_MAX_TIMING_ROUNDS];
+   unsigned long candidates[PS2_BENCH_MAX_TIMING_ROUNDS];
+   unsigned long scalar_nets[PS2_BENCH_MAX_TIMING_ROUNDS];
+   unsigned long candidate_nets[PS2_BENCH_MAX_TIMING_ROUNDS];
    unsigned int rep;
-   unsigned long best = ~0UL;
    unsigned int rounds = (ri->rowbytes == 64U ||
        ri->rowbytes == 1024U || ri->rowbytes == 4096U) ?
        PNG_PS2_BENCH_REPEATS : 1U;
+   if (rounds == 0) rounds = 1U;
+   if (rounds > PS2_BENCH_MAX_TIMING_ROUNDS)
+      rounds = PS2_BENCH_MAX_TIMING_ROUNDS;
+   *scalar_prev_write = *candidate_prev_write = 0;
+
    for (rep = 0; rep < rounds; ++rep)
    {
-      unsigned long elapsed = ps2_bench_batch(fn, ri, dst, src, prev, loops);
-      if (elapsed < best) best = elapsed;
+      copies[rep] = ps2_bench_batch(0, ri, candidate_dst,
+          source, previous, loops);
+      if ((rep & 1U) == 0)
+      {
+         scalar[rep] = ps2_bench_batch(PS2_BENCH_REFERENCE,
+             ri, scalar_dst, source, previous, loops);
+         if (memcmp(previous, previous_snapshot, previous_bytes + 16U))
+         {
+            *scalar_prev_write = 1;
+            memcpy(previous, previous_snapshot, previous_bytes + 16U);
+         }
+         candidates[rep] = ps2_bench_batch(candidate,
+             ri, candidate_dst, source, previous, loops);
+         if (memcmp(previous, previous_snapshot, previous_bytes + 16U))
+         {
+            *candidate_prev_write = 1;
+            memcpy(previous, previous_snapshot, previous_bytes + 16U);
+         }
+      }
+      else
+      {
+         candidates[rep] = ps2_bench_batch(candidate,
+             ri, candidate_dst, source, previous, loops);
+         if (memcmp(previous, previous_snapshot, previous_bytes + 16U))
+         {
+            *candidate_prev_write = 1;
+            memcpy(previous, previous_snapshot, previous_bytes + 16U);
+         }
+         scalar[rep] = ps2_bench_batch(PS2_BENCH_REFERENCE,
+             ri, scalar_dst, source, previous, loops);
+         if (memcmp(previous, previous_snapshot, previous_bytes + 16U))
+         {
+            *scalar_prev_write = 1;
+            memcpy(previous, previous_snapshot, previous_bytes + 16U);
+         }
+      }
+      scalar_nets[rep] = scalar[rep] > copies[rep] ?
+          scalar[rep] - copies[rep] : 0UL;
+      candidate_nets[rep] = candidates[rep] > copies[rep] ?
+          candidates[rep] - copies[rep] : 0UL;
    }
-   return best;
+   *copy_time = ps2_bench_median(copies, rounds);
+   *scalar_time = ps2_bench_median(scalar, rounds);
+   *candidate_time = ps2_bench_median(candidates, rounds);
+   *scalar_net = ps2_bench_median(scalar_nets, rounds);
+   *candidate_net = ps2_bench_median(candidate_nets, rounds);
+}
+
+/* Benchmark-trained, exact-shape trial dispatcher.  This is deliberately
+ * not a production libpng runtime policy: we have only measured three
+ * row sizes and two coupled source/previous alignments in this process.
+ * For other shapes or invalid timings, select the original scalar path.
+ * The test below invokes the *selected function*, not just a displayed
+ * winner name, and compares its output and row guards with scalar. */
+static ps2_bench_fn
+ps2_bench_dispatch_select(unsigned int filter, unsigned int bpp,
+    size_t n, const png_byte *row, const png_byte *prev,
+    ps2_bench_fn scalar)
+{
+   unsigned int width_index = n == 64U ? 0U :
+       n == 1024U ? 1U : n == 4096U ? 2U : PS2_WIN_WIDTHS;
+   unsigned int align = (unsigned int)((size_t)row & 15U);
+   unsigned int index;
+   const ps2_bench_winner *best;
+   if (width_index == PS2_WIN_WIDTHS || filter >= PS2_WIN_FILTERS ||
+       bpp == 0U || bpp >= PS2_WIN_BPPS || align > 1U ||
+       ((size_t)prev & 15U) != ((align * 7U) & 15U))
+      return scalar;
+   best = &ps2_bench_winners[filter][bpp][width_index][align];
+   if (!best->name || ps2_bench_verdict(best->reference_ticks,
+       best->net_ticks) != PS2_BENCH_PLAN_WIN)
+      return scalar;
+
+   for (index=0; index<sizeof ps2_bench_variants /
+        sizeof ps2_bench_variants[0];++index)
+      if (ps2_bench_variants[index].filter == filter &&
+          ps2_bench_variants[index].bpp == bpp &&
+          strcmp(ps2_bench_variants[index].name,best->name) == 0)
+         return ps2_bench_variants[index].fn;
+   return scalar;
+}
+
+static unsigned int ps2_bench_dispatch_passed, ps2_bench_dispatch_failed;
+static int
+ps2_bench_validate_dispatch(void)
+{
+   static const unsigned int widths[3]={64U,1024U,4096U};
+   unsigned int filter, bpp, width_index, align, j;
+   png_byte *s=aligned16(ps2_bench_source);
+   png_byte *d=aligned16(ps2_bench_row);
+   png_byte *p=aligned16(ps2_bench_prev);
+   png_byte *e=aligned16(ps2_bench_expect);
+   png_byte *q=aligned16(ps2_bench_prev_save);
+   unsigned int cases=0, fails=0;
+
+   /* If no winner table exists (e.g. an instrumented host-only program),
+    * the selector is still required to choose the scalar fallback. */
+   if (ps2_bench_dispatch_select(PS2_BENCH_UP,1,257,s,p,
+       PS2_BENCH_REFERENCE) != PS2_BENCH_REFERENCE)
+      ++fails;
+   if (ps2_bench_dispatch_select(PS2_BENCH_UP,1,1024,s+3,p+5,
+       PS2_BENCH_REFERENCE) != PS2_BENCH_REFERENCE)
+      ++fails;
+
+   for(filter=0;filter<PS2_WIN_FILTERS;++filter)
+      for(bpp=1;bpp<PS2_WIN_BPPS;++bpp)
+         for(width_index=0;width_index<3;++width_index)
+            for(align=0;align<2;++align)
+            {
+               png_row_info ri;
+               const size_t n=widths[width_index];
+               const unsigned int prev_align=(align*7U)&15U;
+               const ps2_bench_winner *win =
+                   &ps2_bench_winners[filter][bpp][width_index][align];
+               png_byte *src=s+align, *dst=d+align, *up=p+prev_align;
+               png_byte *want=e+align, *up_snapshot=q+prev_align;
+               size_t previous_bytes, checked_bytes;
+               ps2_bench_fn selected;
+               if (!win->name) continue;
+
+               ri.rowbytes=n;
+               ps2_bench_filter=filter;
+               ps2_bench_bpp=bpp;
+               ps2_bench_shape(filter,bpp,n,
+                   &ps2_bench_input_bytes,&ps2_bench_output_bytes,
+                   &previous_bytes);
+               checked_bytes=ps2_bench_input_bytes > ps2_bench_output_bytes ?
+                   ps2_bench_input_bytes : ps2_bench_output_bytes;
+               if (checked_bytes+align+16U > PS2_BENCH_CAP ||
+                   previous_bytes+prev_align+16U > PS2_BENCH_CAP)
+               {
+                  ++fails;
+                  continue;
+               }
+               PS2_BENCH_SEED_STATE((0x7c1c9d55U ^
+                   (filter*0x9e3779b9U) ^ (bpp*0x85ebca6bU) ^
+                   ((unsigned int)n*0xc2b2ae35U) ^ align) | 1U);
+               for(j=0;j<ps2_bench_input_bytes+16U;++j)
+                  src[j]=j<ps2_bench_input_bytes?random_byte():0xa5;
+               for(j=0;j<previous_bytes+16U;++j)
+                  up[j]=j<previous_bytes?random_byte():0x5a;
+               if(filter==PS2_BENCH_GRAY_RGBA)
+                  for(j=0;j<n;j+=7)src[j]=127;
+               if(filter==PS2_BENCH_RGB_TRNS)
+                  for(j=0;j<n;j+=7)
+                  {
+                     src[3*j]=0x11;src[3*j+1]=0x22;src[3*j+2]=0x33;
+                  }
+               memcpy(up_snapshot,up,previous_bytes+16U);
+               memcpy(want,src,ps2_bench_input_bytes+16U);
+               memcpy(dst,src,ps2_bench_input_bytes+16U);
+               if (ps2_bench_output_bytes>ps2_bench_input_bytes)
+               {
+                  memset(want+ps2_bench_input_bytes,0xa5,
+                      ps2_bench_output_bytes-ps2_bench_input_bytes+16U);
+                  memset(dst+ps2_bench_input_bytes,0xa5,
+                      ps2_bench_output_bytes-ps2_bench_input_bytes+16U);
+               }
+               PS2_BENCH_REFERENCE(&ri,want,up);
+               selected=ps2_bench_dispatch_select(filter,bpp,n,
+                   dst,up,PS2_BENCH_REFERENCE);
+               selected(&ri,dst,up);
+               ++cases;
+               if (memcmp(want,dst,checked_bytes+16U) ||
+                   memcmp(up,up_snapshot,previous_bytes+16U))
+               {
+                  ++fails;
+                  printf("DISPATCH_FAIL,%u,%u,%lu,%u,%s\n",filter,bpp,
+                      (unsigned long)n,align,win->name);
+               }
+            }
+   /* Do not claim the trained dispatcher has passed if clock resolution
+    * made every candidate ineligible. A correctness-only ELF may still
+    * pass, but no dispatch speed choice has been validated. */
+   if (cases == 0U && fails == 0U)
+   {
+      ps2_bench_dispatch_passed=ps2_bench_dispatch_failed=0U;
+      printf("DISPATCH_NA,cases=0,reason=no-valid-measured-winner\n");
+      return 0;
+   }
+   /* Some selector-policy invariants do not execute a measured row.
+    * Keep their failures separate to avoid unsigned underflow in counts. */
+   ps2_bench_dispatch_passed=cases >= fails ? cases-fails : 0U;
+   ps2_bench_dispatch_failed=fails;
+   printf("DISPATCH_%s,cases=%u,passed=%u,failed=%u,"
+       "policy=exact-shape-scalar-fallback\n",
+       fails?"FAIL":"PASS",cases,ps2_bench_dispatch_passed,fails);
+   return fails ? 1 : 0;
 }
 
 static int
@@ -980,7 +1203,7 @@ png_ps2_bench_all(void)
             png_byte *q = saved + ((offsets[oi] * 7U) & 15U);
             unsigned long copy_time, scalar_time, candidate_time;
             unsigned long net_scalar, net_candidate, scaled;
-            int a_failed = 0, b_failed;
+            int a_failed = 0, b_failed, a_prev_write, b_prev_write;
             size_t previous_bytes, checked_bytes;
             ri.rowbytes = n;
             ps2_bench_shape(v->filter, v->bpp, n,
@@ -1026,24 +1249,27 @@ png_ps2_bench_all(void)
                memset(r + ps2_bench_input_bytes + 16, 0xa5,
                    ps2_bench_output_bytes - ps2_bench_input_bytes);
             }
-            /* Timed batches produce the outputs to validate: no extra run. */
-            copy_time = ps2_bench_best(0, &ri, r, s, p, loops);
-            scalar_time = ps2_bench_best(PS2_BENCH_REFERENCE, &ri, e, s, p, loops);
-            /* A is the scalar reference. Check its bounds and input
-             * preservation independently, before B can touch the buffers. */
+            /* Correctness checks reuse the LAST measured outputs.  This
+             * method measures each A/B against a copy-only replay in the
+             * same round and uses the median, not cherry-picked minima. */
+            ps2_bench_matched_timing(&ri, r, e, s, p, q,
+                previous_bytes, loops, v->fn,
+                &copy_time, &scalar_time, &candidate_time,
+                &net_scalar, &net_candidate, &a_prev_write,
+                &b_prev_write);
+            a_failed = a_prev_write;
             for (j = 0; j < 16; ++j)
                if (e[checked_bytes + j] != 0xa5) a_failed = 1;
-            if (memcmp(q, p, previous_bytes + 16)) a_failed = 1;
-            memcpy(p, q, previous_bytes + 16);
-            candidate_time = ps2_bench_best(v->fn, &ri, r, s, p, loops);
-
-            net_scalar = scalar_time > copy_time ? scalar_time - copy_time : 0;
-            net_candidate = candidate_time > copy_time ? candidate_time - copy_time : 0;
+            b_failed = b_prev_write;
             item->ticks[0] += net_scalar;
             item->ticks[1] += net_candidate;
             ++item->checked;
-            b_failed = a_failed || memcmp(e, r, checked_bytes + 16) ||
-                memcmp(q, p, previous_bytes + 16);
+            /* A broken reference makes the B comparison indeterminate;
+             * retain a non-PASS outcome without attributing a B-side
+             * memory error that never occurred. */
+            if (memcmp(e, r, checked_bytes + 16))
+               b_failed = 1;
+            if (a_failed) b_failed = 1;
             item->failures[0] += a_failed != 0;
             item->failures[1] += b_failed != 0;
             if (a_failed || b_failed)
@@ -1088,6 +1314,9 @@ png_ps2_bench_all(void)
    }
    ps2_bench_clock_done();
    ps2_bench_print_winners();
+   /* One selected-path smoke test per winning shape; no additional sweep. */
+   if (ps2_bench_validate_dispatch() != 0)
+      ++fails;
    ps2_bench_ab.completed = fails == 0;
    if (!fails) printf("FUSED_PASS,cases=%u,variants=%u\n", successes,
        (unsigned int)(sizeof ps2_bench_variants / sizeof ps2_bench_variants[0]));

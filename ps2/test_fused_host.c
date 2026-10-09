@@ -61,8 +61,23 @@ static void candidate(png_row_info *ri, png_byte *r, const png_byte *p)
 }
 int main(void)
 {
+   /* Copy-adjusted benchmark selection must reject a one-off low outlier,
+    * including the zero-tick artifact that creates fictional speedups. */
+   {
+      unsigned long three[3] = {100UL, 1UL, 101UL};
+      unsigned long equal[3] = {8UL, 8UL, 8UL};
+      unsigned long single[1] = {77UL};
+      assert(ps2_bench_median(three, 3) == 100UL);
+      assert(ps2_bench_median(equal, 3) == 8UL);
+      assert(ps2_bench_median(single, 1) == 77UL);
+   }
    assert(png_ps2_bench_all() == 0);
    assert(ps2_bench_ab.completed && ps2_bench_ab.cases == 8U * 18U * 7U);
+   assert(ps2_bench_dispatch_passed != 0);
+   assert(ps2_bench_dispatch_failed == 0);
+   assert(ps2_bench_dispatch_select(PS2_BENCH_UP,1,257,
+       ps2_bench_row,ps2_bench_prev,PS2_BENCH_REFERENCE) ==
+       PS2_BENCH_REFERENCE);
    assert(updates == 8U * 20U);
    for (fault = 0; fault < 8; ++fault)
    {
@@ -101,6 +116,27 @@ int main(void)
    assert(ps2_bench_winners[PS2_BENCH_UP][1][1][0].plan_index == 1);
    assert(strcmp(ps2_bench_winners[PS2_BENCH_SUB][1][1][0].name,
        "unrelated") == 0);
+   /* Runtime selector selects a real measured callback, never just a
+    * printed name, and falls back safely when scalar wins / no shape. */
+   {
+      ps2_bench_winner *win =
+          &ps2_bench_winners[PS2_BENCH_WRITE_UP][1][1][0];
+      png_byte *row=aligned16(ps2_bench_row);
+      png_byte *prev=aligned16(ps2_bench_prev);
+      win->name = "host-write";
+      win->net_ticks = 10;
+      win->reference_ticks = 20;
+      assert(ps2_bench_dispatch_select(PS2_BENCH_WRITE_UP,1,1024,
+          row,prev,PS2_BENCH_REFERENCE) == candidate);
+      win->net_ticks = 30;
+      assert(ps2_bench_dispatch_select(PS2_BENCH_WRITE_UP,1,1024,
+          row,prev,PS2_BENCH_REFERENCE) == PS2_BENCH_REFERENCE);
+      win->net_ticks = 10;
+      assert(ps2_bench_dispatch_select(PS2_BENCH_WRITE_UP,1,257,
+          row,prev,PS2_BENCH_REFERENCE) == PS2_BENCH_REFERENCE);
+      assert(ps2_bench_dispatch_select(PS2_BENCH_WRITE_UP,1,1024,
+          row+3,prev+5,PS2_BENCH_REFERENCE) == PS2_BENCH_REFERENCE);
+   }
    puts("PASS fused sweep, progress, output/canary/input failure detection");
    return 0;
 }

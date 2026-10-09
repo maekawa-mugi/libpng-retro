@@ -1,5 +1,30 @@
 # PS2 Emotion Engine MMI backend
 
+## EE MMI winner-first display (single screen)
+
+The **`auto-fastest.elf` scoreboard shows all 71 filter/bpp contests on
+one 80x25 PS2 screen** (four columns by eighteen rows). Each cell contains
+only a group number, winning plan ID (or `S` for scalar), `WIN`, and
+speed ratio, such as `01:57 WIN 43.3x` or `09:S WIN 1.5x`.
+`-- N/A` means the timer cannot establish a valid win, and `= TIE`
+means equal recorded net time. These are **1024-byte aligned** contests,
+not global recommendations for all image sizes.
+
+Groups update **live** as each benchmark reaches the 1024-byte shape.
+The bottom line changes to **`DONE: PASS`** or **`DONE: FAIL`** when all
+correctness checks and benchmarks finish. There is no rotating page
+carousel, no `AOBO` correctness wall, and no artificial halt message.
+The correctness checks still run; only the screen presentation changed.
+
+`GROUP_MAP,<group>,<filter>,<bpp>` and
+`PLAN_MAP,<id>,<group>,<filter>,<bpp>,<name>` preserve the
+full ID-to-implementation mapping in stdout. The original
+`RESULT`, `BENCH`, `FASTEST`, and `AUTO_WIN` CSV lines also retain
+all exact timings and names. All debug output goes to stdout, not
+the coordinate-based framebuffer screen. Each 18-character scoreboard
+cell stops before the final text columns to avoid line-wrap/white-box
+artifacts. `test_compact_layout_host` checks the 72-cell geometry.
+
 ## Integrated PR #1–#7 on the mmi branch
 
 The `mmi` branch combines all seven MMI PRs and the local per-item A/B
@@ -16,22 +41,19 @@ PS2DEV/PS2SDK values override these paths. GCC 15.2.0 successfully built:
 
 - `build-ps2-mmi/all-pr/all-in-one.elf`: every experimental option, the
   unified sampled correctness checks and the 88-variant benchmark lab. Diagnostics
-  go to both the PS2 screen and stdout; `TEST: OK! code=0` appears only after
-  the fused sweep finishes. The final screen remains visible.
-  The screen follows `openssl-retro/test/ps2/main.c`: each candidate has
-  its own A (generic C) and B (MMI candidate) columns, changing from white
-  `WAIT` to yellow `RUNNING` to green `O (N ms)` or red `X (N ms)`.
-  A validates the scalar reference's bounds and previous-row preservation;
-  B validates output equivalence and previous-row preservation. A reference
-  validation failure also invalidates the corresponding B comparison.
-  Timing is this candidate's matched workload, copy overhead subtracted,
-  not the accumulated time across all 88 candidates or whole-PNG decoding.
+  go exclusively to stdout; the PS2 display uses fixed coordinates
+  for a **live winner table** with no log-induced scrolling or wrapping.
+  `TEST: OK! code=0` appears in stdout after the fused sweep finishes.
+  The screen shows `DONE: PASS/FAIL` once all correctness validation is done.
+  Both A (generic C) and B (candidate) remain independently verified and
+  their full per-item status/timing stays in CSV. Reported net kernel time
+  subtracts replay-copy overhead; it is not whole-PNG throughput.
   Representative autotuning shapes use three measurements per batch;
   other shapes use one. Zero timing does not change test status.
-  Nine candidates appear per page; progress switches pages as needed.
-  After completion, all ten result pages rotate every four seconds, each
-  retaining its own results and a green `END!`. `END!` marks termination;
-  `TEST: OK/FAIL` and each side's `O/X` indicate success or failure.
+  The current winner-first screen has 71 contests in one fixed table,
+  with only winning plan numbers, Scalar wins and ratios. No page
+  rotation or A/B candidate list. The full per-item status/timing
+  remains in stdout CSV. The final footer is DONE: PASS/FAIL.
   The fused checks continue after a mismatch to finish each item's matrix
   and preserve distinct A/B results. All screen rendering is outside timing.
   CSV and per-item `RESULT` records go to stdout without drawing each log row.
@@ -57,10 +79,17 @@ To repeat host checks with a Windows Python installation, set the Makefile's
 
 ### Fast unified runtime
 
-The final EE screen now declares **SCALAR WIN**, **PLAN A WIN**,
-**PLAN B WIN** (or a later plan letter), **TIE**, or **N/A** beside each
-representative filter. Plan letters identify implementation candidates in
-their *individual filter/bpp family*, in fixed benchmark declaration order:
+The newest display uses **four columns of numeric winner results on
+one screen** (up to 72 unique filter/bpp contests). Candidate-by-candidate
+A/B checks still run but no longer crowd the screen. Final **DONE: PASS**
+is unambiguous. See the winner-first display section above.
+
+
+The stdout `AUTO` CSV retains **SCALAR WIN**, **PLAN A WIN**,
+**PLAN B WIN** (or a later letter), **TIE**, and **N/A** beside
+representative filters. The **PS2 screen uses the shorter numeric format**,
+with group ID and global plan ID described at the top of this README.
+Each `PLAN_MAP` record identifies the actual kernel name:
 
 - `PLAN E WIN  up-4x  41.241x` means that Up's plan E beat the scalar
   reference in the same 1024-byte, aligned-row shape. The named source is
@@ -71,7 +100,8 @@ their *individual filter/bpp family*, in fixed benchmark declaration order:
   a winner. **One valid plan is enough** to compare against scalar; requiring
   two MMI plans would wrongly hide single-plan results.
 
-The final `WIN COUNT` counts only the representative rows shown on screen.
+The one-screen footer counts all 71 filter/bpp contests, and `AUTO_TOTAL`
+still counts the ten representative CSV summary cases.
 `AUTO_WIN,...` CSV logs the result for *every* valid 64/1024/4096-byte,
 alignment-0/1 group with source name, stable plan letter, net timing, and
 ratio. `AUTO_TOTAL,...` sums representative-screen verdicts. The existing
@@ -598,6 +628,81 @@ configuration and the all-opt-in source configuration. The GCC-only
 `syntax-ee-gcc` target parses the actual inline-assembly operands in
 both configurations without assembling R5900 instructions.
 
+## One-boot dispatch and production palette-hook validation
+
+The single `auto-fastest.elf` additionally executes **`DISPATCH_PASS`**
+and **`PALETTE_HOOK_PASS`** after its already-integrated kernel
+correctness/benchmark sweep. Both are intentionally **small,
+nonduplicating integration checks**:
+
+- The measured winner table is used to select an actual function pointer
+  for each valid **64, 1024, or 4096 byte** row with precisely measured
+  current-row/previous-row alignment combinations **(0/0 and 1/7)**.
+  Only a validated plan that beat scalar can be selected; unknown,
+  invalid or unmeasured shapes fall back to the scalar reference.
+  `DISPATCH_PASS` means those selected callbacks, not merely candidate
+  names, produced exactly the scalar result with intact previous rows and
+  guard bytes. No additional full candidate search is performed.
+  This is a **training-and-verification lab policy**, not automatically
+  installed into production libpng and not a basis for interpolating other
+  row widths or pointer alignments.
+- The production `pngsimd.c` palette expansion hook can now be built
+  explicitly with `PNG_PS2_EE_MMI_PALETTE` (when target-specific PNG
+  read expansion is configured). It handles **8-bit palette rows**,
+  in-place RGB8 without tRNS and RGBA8 with tRNS, defaults alpha to
+  255 for indices outside the tRNS table, and updates every relevant
+  `png_row_info` field. Non-8bit indexed rows return unhandled and
+  are expanded by libpng's existing generic transform. The exact worker
+  source is shared by the production target and
+  `ps2/test_palette_hook.c`, which checks fallback, sentinels,
+  metadata, width and alignment. `test_palette_hook_host` runs it
+  on PC as well.
+
+The existing write-filter and other color-conversion candidate tests
+remain in the same ELF. Unlike palette expansion, production PNG writing
+has no equivalent simple target-specific expansion hook; these kernels
+are still **experimental**, not wired into `pngwutil.c`. A real PNG
+encode/decode round-trip and hardware measurements remain necessary
+before any write-kernel production registration.
+
+The compact footer reports the final dispatch and palette validation
+status on the same one-screen scoreboard, with `DONE: PASS/FAIL`.
+Neither implies that the optimal runtime dispatch is proven for
+arbitrary image sizes or that PNG-wide throughput improved.
+
+## Production dispatch after PCSX2 comparison
+
+The standalone `auto-fastest.elf` benchmarks all Up/Paeth candidates, but
+its winner list does **not** automatically rewrite the libpng production
+dispatch. On the matched 1024-byte, aligned-row PCSX2 sample, `up-4x`
+won and scalar Paeth4 beat the experimental packed Paeth4. The production
+`ps2/ee_init.c` backend now supports **explicit opt-in**
+`PNG_PS2_EE_MMI_UP_4X`, with priority over `PNG_PS2_EE_MMI_UP_2X`.
+The 4x kernel's alignment and short-row fallback are unchanged. Example
+for a libpng build that already enables the PS2 EE target:
+
+```sh
+# Add these as target-specific C compiler flags:
+-DPNG_PS2_EE_MMI_UP_4X
+```
+
+When `PNG_PS2_EE_MMI_PAETH` is enabled, production keeps libpng's
+existing **scalar Paeth4** dispatch by default, while all other bpp
+Paeth candidates remain available under that flag. The previous
+Paeth4 kernel is still in the standalone ELF's A/B sweep. Define
+`PNG_PS2_EE_MMI_PAETH4_FORCE` alongside
+`PNG_PS2_EE_MMI_PAETH` only to explicitly force the experimental
+Paeth4 backend for further research.
+
+Representative benchmarks now use **paired A/B timing**, alternate
+scalar-vs-candidate execution order, and select the **median of up to
+three copy-adjusted repetitions** rather than the single lowest time
+of separately gathered copy/scalar/candidate samples. Nonrepresentative
+widths retain one measured correctness batch. This limits lucky
+zero-duration measurements and warmed-cache bias, but the raw `clock()`
+timer may still be coarse; cycle-counter validation and end-to-end
+PNG measurements remain necessary before declaring universal speedups.
+
 ## One-run automatic fastest-kernel selection (all PRs integrated)
 
 **Build once, boot once, no runtime arguments:** after configuring PS2SDK,
@@ -616,10 +721,11 @@ including short/truncated rows, and all kernels included in the sweep.
 
 At completion, the ELF emits `FASTEST,...` entries comparing the **same
 filter, bpp, rowbytes and pointer alignment** (64, 1024 and 4096 bytes;
-aligned and 1-byte offset); `AUTO,...` is the on-screen readable summary
+aligned and 1-byte offset); `AUTO,...` is the stdout readable summary
 for the 1024-byte aligned cases. A missing/low-resolution timer shows N/A,
-not a fictional speedup. Three repetitions are used for these representative
-widths, while corner-case lengths use one correctness+timetable batch.
+not a fictional speedup. Three paired, order-alternated repetitions are used for these representative
+widths, with the median net cost reported; corner-case lengths retain one
+correctness-and-timing batch.
 
 The extra `Up` alternatives are original 1x, original 2x, interleaved 2x
 loads, prefetch 1x, prefetch 2x, 4x, and prefetch 4x. These alternatives
