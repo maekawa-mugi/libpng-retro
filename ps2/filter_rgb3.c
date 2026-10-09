@@ -45,6 +45,10 @@ png_ps2_add_rgb3(png_uint_32 a, png_uint_32 b)
 #endif
 }
 
+#if defined(PNG_PS2_EE_MMI_SUB3_PREFIX)
+#include "filter_sub3_prefix_mmi.c"
+#endif
+
 /* No unaligned word loads: three byte loads per pixel, including row tails. */
 static void
 png_read_filter_row_sub3_ps2(png_row_info *row_info, png_byte *row,
@@ -56,6 +60,10 @@ png_read_filter_row_sub3_ps2(png_row_info *row_info, png_byte *row,
 
    if (n <= 3)
       return;
+#if defined(PNG_PS2_EE_MMI_SUB3_PREFIX)
+   if (png_read_filter_row_sub3_prefix_ps2(row, n))
+      return;
+#endif
    left = png_ps2_pack_rgb3(row);
    for (i = 3; n - i >= 3; i += 3)
    {

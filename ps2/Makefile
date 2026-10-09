@@ -27,5 +27,5 @@ include $(PS2SDK)/samples/Makefile.eeglobal
 clean:
 	$(RM) $(EE_BIN) $(EE_OBJS)
 
-# Included production sources must trigger harness recompilation.
-test_filter_mmi.o: filter_mmi.c filter_up_mmi.c filter_gray_mmi.c filter_rgb3.c filter_paeth_mmi.c filter_wide_mmi.c
+# The harness includes its filters, correctness suites and benchmark directly.
+test_filter_mmi.o: $(wildcard *.c *.h)

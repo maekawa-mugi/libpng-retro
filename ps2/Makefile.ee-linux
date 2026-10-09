@@ -1,0 +1,54 @@
+# Build the same self-contained EE correctness/benchmark program for
+# PS2 Linux userspace.  This does not require PS2SDK or link against libpng.
+# Supply your R5900-capable Linux cross compiler; ordinary MIPS targets
+# do not implement the Emotion Engine MMI instructions.
+#
+# Example:
+#   make -f ps2/Makefile.ee-linux EE_LINUX_CC=/path/to/ee-linux-gcc
+#
+# PCCR programming is intentionally NOT enabled: it is not safe from
+# ordinary Linux userspace. Timing uses gettimeofday microseconds.
+ifndef EE_LINUX_CC
+$(error Set EE_LINUX_CC to your PS2 Linux / R5900-capable C compiler)
+endif
+
+EE_LINUX_BIN ?= ps2/test_filter_mmi.ee-linux
+EE_LINUX_CFLAGS ?= -O2 -Wall -Wextra
+EE_LINUX_LDFLAGS ?=
+EE_LINUX_LIBS ?=
+EE_LINUX_DEFINES ?= \
+  -DPNG_PS2_BENCH_ENABLE -DPNG_PS2_BENCH_POSIX_TIMER \
+  -DPNG_PS2_EE_MMI_SUB3_PREFIX \
+  -DPNG_PS2_EE_MMI_GRAY_PREFIX16 \
+  -DPNG_PS2_EE_MMI_SUB4_PREFIX \
+  -DPNG_PS2_EE_MMI_SUB6_PREFIX16 \
+  -DPNG_PS2_EE_MMI_SUB8_PREFIX16 \
+  -DPNG_PS2_EE_MMI_SUB8_WORDS \
+  -DPNG_PS2_EE_MMI_UP_2X -DPNG_PS2_EE_MMI_UP_SCHEDULES \
+  -DPNG_PS2_EE_MMI_SUB4_UNROLL4 \
+  -DPNG_PS2_EE_MMI_AVG4_DUAL \
+  -DPNG_PS2_EE_MMI_GRAY_AVG \
+  -DPNG_PS2_EE_MMI_WIDE_AVG \
+  -DPNG_PS2_EE_MMI_PAETH \
+  -DPNG_PS2_EE_MMI_PAETH_MASK
+
+.PHONY: all clean
+all: $(EE_LINUX_BIN)
+
+$(EE_LINUX_BIN): ps2/test_filter_mmi.c ps2/bench_filter_mmi.c ps2/bench_baseline_mmi.c ps2/bench_ab_summary.h \
+  ps2/test_extra_kernels.c ps2/extra_kernels_mmi.c \
+  ps2/test_full_kernels.c ps2/extra_full_kernels.c \
+  ps2/test_color_kernels.c ps2/extra_color_kernels.c \
+  ps2/filter_mmi.c ps2/filter_gray_mmi.c ps2/filter_rgb3.c \
+  ps2/filter_wide_mmi.c ps2/filter_paeth_mmi.c \
+  ps2/filter_sub3_prefix_mmi.c ps2/filter_gray_prefix_mmi.c \
+  ps2/filter_sub6_prefix_mmi.c ps2/filter_sub8_prefix_mmi.c \
+  ps2/filter_up_unrolled_mmi.c ps2/filter_up_schedules_mmi.c \
+  ps2/filter_up4_mmi.c \
+  ps2/filter_sub4_unrolled_mmi.c \
+  ps2/filter_avg4_dual_mmi.c
+	$(EE_LINUX_CC) $(EE_LINUX_CFLAGS) $(EE_LINUX_DEFINES) \
+	  ps2/test_filter_mmi.c -o $@ $(EE_LINUX_LDFLAGS) $(EE_LINUX_LIBS)
+
+clean:
+	$(RM) $(EE_LINUX_BIN)

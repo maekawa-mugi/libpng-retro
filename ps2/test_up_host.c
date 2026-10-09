@@ -8,7 +8,12 @@
 typedef unsigned char png_byte;
 typedef struct { size_t rowbytes; } png_row_info;
 #define PNG_PS2_UP_PORTABLE_ADD 1
+#ifdef PNG_PS2_UP_2X_HOST_TEST
+#include "filter_up_unrolled_mmi.c"
+#define png_read_filter_row_up_ps2 png_read_filter_row_up_2x_ps2
+#else
 #include "filter_up_mmi.c"
+#endif
 #define NMAX 1024U
 #define CAP (NMAX + 64U)
 static png_byte rows[CAP], prevs[CAP], expected[CAP], savedprev[CAP];

@@ -44,6 +44,10 @@ png_ps2_gray_add4(png_uint_32 a, png_uint_32 b)
 #endif
 }
 
+#if defined(PNG_PS2_EE_MMI_GRAY_PREFIX16)
+#include "filter_gray_prefix_mmi.c"
+#endif
+
 /* Parallel prefix scan for bpp=1, four contiguous bytes per group.
  * Inject carry into the first lane, then scan offsets 1 and 2 bytes.
  */
@@ -54,6 +58,10 @@ png_read_filter_row_sub1_ps2(png_row_info *row_info, png_byte *row,
    size_t i = 0, n = row_info->rowbytes;
    png_uint_32 carry = 0;
    (void)prev_row;
+#if defined(PNG_PS2_EE_MMI_GRAY_PREFIX16)
+   if (png_ps2_gray_sub_prefix16(row, n, 1))
+      return;
+#endif
 
    for (; n - i >= 4; i += 4)
    {
@@ -78,6 +86,10 @@ png_read_filter_row_sub2_ps2(png_row_info *row_info, png_byte *row,
    size_t i = 0, n = row_info->rowbytes;
    png_uint_32 carry = 0;
    (void)prev_row;
+#if defined(PNG_PS2_EE_MMI_GRAY_PREFIX16)
+   if (png_ps2_gray_sub_prefix16(row, n, 2))
+      return;
+#endif
 
    for (; n - i >= 4; i += 4)
    {

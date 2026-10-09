@@ -10,6 +10,9 @@
 
 /* 16-byte EE MMI Up filter and safe nonaligned prologue. */
 #include "filter_up_mmi.c"
+#ifdef PNG_PS2_EE_MMI_UP_2X
+#include "filter_up_unrolled_mmi.c"
+#endif
 
 #if defined(PNG_PS2_EE_MMI_SUB4_PREFIX)
 /* Experimental four-pixel, 128-bit Sub4 prefix scan.
@@ -74,6 +77,10 @@ png_read_filter_row_sub4_prefix_ps2(png_byte *row, size_t rowbytes)
 }
 #endif /* PNG_PS2_EE_MMI_SUB4_PREFIX */
 
+#ifdef PNG_PS2_EE_MMI_SUB4_UNROLL4
+#include "filter_sub4_unrolled_mmi.c"
+#endif
+
 /* PNG Sub with exactly four bytes per pixel (e.g. RGBA8).
  * The previous decoded pixel is four bytes, packed into the low word of
  * $8.  PADDB handles all four byte lanes including modulo-256 wrap.
@@ -95,6 +102,10 @@ png_read_filter_row_sub4_ps2(png_row_info *row_info, png_byte *row,
 #if defined(PNG_PS2_EE_MMI_SUB4_PREFIX)
    if (png_read_filter_row_sub4_prefix_ps2(row, rowbytes))
       return;
+#endif
+#if defined(PNG_PS2_EE_MMI_SUB4_UNROLL4)
+   png_read_filter_row_sub4_unroll4_ps2(row_info, row, prev_row);
+   return;
 #endif
 
    /* No halfword/word read beyond the row or from an unaligned address.
@@ -130,6 +141,10 @@ png_read_filter_row_sub4_ps2(png_row_info *row_info, png_byte *row,
 }
 
 
+#ifdef PNG_PS2_EE_MMI_AVG4_DUAL
+#include "filter_avg4_dual_mmi.c"
+#endif
+
 /* Average, bpp=4: floor((a+b)/2) on four independent byte lanes.
  * (a&b) + (((a^b)&0xfefefefe)>>1) is the exact non-rounding mean.
  * PADDB adds the residual modulo 256 without inter-byte carries.
@@ -140,6 +155,11 @@ png_read_filter_row_avg4_ps2(png_row_info *row_info, png_byte *row,
 {
    size_t rowbytes = row_info->rowbytes;
    size_t i;
+
+#ifdef PNG_PS2_EE_MMI_AVG4_DUAL
+   if (png_ps2_avg4_dual(row, prev_row, rowbytes))
+      return;
+#endif
 
    if (rowbytes >= 4 && (rowbytes & 3U) == 0 &&
        (((size_t)row | (size_t)prev_row) & 3U) == 0)

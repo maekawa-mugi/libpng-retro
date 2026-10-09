@@ -1,5 +1,106 @@
 # PS2 Emotion Engine MMI backend
 
+## Integrated PR #1–#7 on the mmi branch
+
+The `mmi` branch combines all seven MMI PRs and the local per-item A/B
+result improvements in one commit based on `libpng18`. Build the integrated
+93-candidate automatic-selection harness with `bash ps2/build-pcsx2.sh`;
+the output is `build-ps2-mmi/auto-fastest.elf`. The historical build and
+verification notes below describe the earlier 88-candidate integration.
+The combined sources pass 22 host regression executables, two portable
+syntax configurations and eight Python log-parser tests on Windows.
+
+Run `bash ps2/build-all-pr-msys.sh` from the repository root. It uses
+`/usr/local/ps2dev` and its `ps2sdk` subdirectory by default; existing
+PS2DEV/PS2SDK values override these paths. GCC 15.2.0 successfully built:
+
+- `build-ps2-mmi/all-pr/all-in-one.elf`: every experimental option, the
+  unified sampled correctness checks and the 88-variant benchmark lab. Diagnostics
+  go to both the PS2 screen and stdout; `TEST: OK! code=0` appears only after
+  the fused sweep finishes. The final screen remains visible.
+  The screen follows `openssl-retro/test/ps2/main.c`: each candidate has
+  its own A (generic C) and B (MMI candidate) columns, changing from white
+  `WAIT` to yellow `RUNNING` to green `O (N ms)` or red `X (N ms)`.
+  A validates the scalar reference's bounds and previous-row preservation;
+  B validates output equivalence and previous-row preservation. A reference
+  validation failure also invalidates the corresponding B comparison.
+  Timing is this candidate's matched workload, copy overhead subtracted,
+  not the accumulated time across all 88 candidates or whole-PNG decoding.
+  Representative autotuning shapes use three measurements per batch;
+  other shapes use one. Zero timing does not change test status.
+  Nine candidates appear per page; progress switches pages as needed.
+  After completion, all ten result pages rotate every four seconds, each
+  retaining its own results and a green `END!`. `END!` marks termination;
+  `TEST: OK/FAIL` and each side's `O/X` indicate success or failure.
+  The fused checks continue after a mismatch to finish each item's matrix
+  and preserve distinct A/B results. All screen rendering is outside timing.
+  CSV and per-item `RESULT` records go to stdout without drawing each log row.
+- `build-ps2-mmi/all-pr/libpng.a` and `include/`: full PS2 libpng static
+  library with all production read-filter options enabled.
+- `build-ps2-mmi/all-pr/pngtest.elf`: full libpng read/write test linked
+  with the SDK's zlib. Requires PNG files and a working runtime filesystem.
+
+PR #2–#6 form a stack. PR #6 already preserves PR #1's Up 2x and Sub4 4x
+loops as separately benchmarkable alternatives; integration retains those
+alongside the original kernels. The extra write/color/Adam7 lab kernels
+remain outside production libpng dispatch, as documented below.
+
+All host regression programs, portable syntax checks and four Python parser
+tests pass with MINGW32 GCC. The all-in-one ELF builds with
+`-Wall -Wextra -Werror`; the library emits one unused-original-Up warning
+when the Up 2x option replaces it. These new ELFs have not yet been run on
+PCSX2 or real hardware. Benchmark timing uses `clock_ticks`, not EE cycles.
+
+To repeat host checks with a Windows Python installation, set the Makefile's
+`PYTHON` variable to its MSYS path:
+`make -f ps2/Makefile.host test CC=gcc PYTHON=/c/path/to/python.exe`.
+
+### Fast unified runtime
+
+The final EE screen now declares **SCALAR WIN**, **PLAN A WIN**,
+**PLAN B WIN** (or a later plan letter), **TIE**, or **N/A** beside each
+representative filter. Plan letters identify implementation candidates in
+their *individual filter/bpp family*, in fixed benchmark declaration order:
+
+- `PLAN E WIN  up-4x  41.241x` means that Up's plan E beat the scalar
+  reference in the same 1024-byte, aligned-row shape. The named source is
+  the fastest valid candidate, not a globally selected kernel for all sizes.
+- `SCALAR WIN  sub4-...  1.250x` means scalar won by 1.250x against the
+  fastest measured plan (whose name remains visible for diagnosis).
+- `N/A` means the timer resolution or correctness checks did not support
+  a winner. **One valid plan is enough** to compare against scalar; requiring
+  two MMI plans would wrongly hide single-plan results.
+
+The final `WIN COUNT` counts only the representative rows shown on screen.
+`AUTO_WIN,...` CSV logs the result for *every* valid 64/1024/4096-byte,
+alignment-0/1 group with source name, stable plan letter, net timing, and
+ratio. `AUTO_TOTAL,...` sums representative-screen verdicts. The existing
+`FASTEST,...` lines still rank only MMI candidates, while the old A/B totals
+sum *all* matched measurements and are **not** win counts or a production
+dispatch recommendation. Repeated EE measurements are needed to distinguish
+small timing differences from noise.
+
+The default ELF validates the final scalar/candidate outputs from the timed
+batches directly, including output guards and previous-row preservation.
+All 88 candidates remain available. It checks 18 lengths (short rows and
+vector boundaries from 1 to 31, then 32/64/128/256/1024/4096/16384) and seven
+alignments, skipping ineligible direct kernels. Failures are retained per item
+and per side while the remaining checks continue.
+The normal build skips the separate exhaustive suites; these sampled runtime
+checks do not replace exhaustive host coverage, zero-length cases, disjoint
+transforms or all seven Adam7 passes in those suites.
+
+Short rows use one iteration; other rows use 2–64 iterations and one timer
+measurement per batch. This reduces runtime, with noisier per-case estimates
+than the original repeated benchmark. No EE speedup or wall-time reduction
+has yet been measured on hardware/PCSX2.
+
+For the original exhaustive suites followed by the fused sweep, rebuild:
+`PNG_PS2_TEST_EXHAUSTIVE=1 bash ps2/build-all-pr-msys.sh`.
+That mode restores 32–512 iterations and three measurements per batch.
+The analyzer recognizes `FUSED_PASS` + `BENCH_DONE` as the unified completion
+markers and verifies the number of validated rows; it still accepts older logs.
+
 This directory contains an experimental PNG read-filter backend for the
 PlayStation 2 Emotion Engine (R5900).  It uses the **EE 128-bit integer MMI
 instructions**, not MIPS MSA and not Loongson's unrelated MMI extension.
@@ -59,6 +160,155 @@ Both functions work on the *actual* row byte length, including shorter
 Adam7 passes.  The default Sub4 loop is horizontal and intentionally
 uses only the low four byte lanes of PADDB; an optimized full-width
 prefix-sum implementation could replace it after profiling.
+
+## Extended kernel coverage for fewer PS2 test cycles
+
+The extended opt-in **standalone kernel lab** adds the PNG operations not
+covered by the initial 16-byte read-filter experiments:
+
+- Forward PNG Sub, Average and Paeth for **every common encoded byte
+  stride: 1, 2, 3, 4, 6 and 8**. Each preserves original left bytes
+  during backward processing; four consecutive byte residuals are
+  subtracted using EE `PSUBB` when the portable host model is disabled.
+- Palette index -> **RGB8**, and index -> **RGBA8 with the complete
+  256-entry tRNS alpha table**, in-place or disjoint.
+- 16-bit PNG byte-swap (aligned 16-byte `PSRLH/PSLLH/POR` kernel
+  with scalar alignment/tail), 16->8 high-byte reduction,
+  RGB/RGBA red-blue channel swap at **8-bit and 16-bit** depths,
+  RGB8->RGBA8, RGBA8->RGB8, and RGBA8->ARGB8.
+- PNG packed **1/2/4-bit** palette-index and grayscale sample unpacking
+  to 8 bits with exact grayscale scaling, Gray8->RGB8 and
+  Gray8->RGBA8 with gray tRNS, plus RGB8 tRNS->RGBA8.
+- Adam7 horizontal pass row-scatter for byte-aligned 1/2/3/4/6/8-byte
+  pixels and MSB-first packed 1/2/4-bit pixels across **all 7 passes**.
+  Vertical pass scheduling remains the responsibility of libpng.
+
+`extra_full_kernels.c` and `extra_color_kernels.c` contain the kernels.
+`test_full_kernels.c` and `test_color_kernels.c` run a shared
+host-and-EE correctness matrix against independent references. The
+one-trip harness requires `PASS`, `EXTRA_PASS`, `FULL_PASS`,
+`COLOR_PASS`, and `BENCH_DONE` before the analyzer accepts a log.
+Failure output is tagged with `FULL_FAIL`, `COLOR_FAIL`, or
+`BENCH_FAIL`. Tests check small/truncated rows, 16 pointer offsets,
+output bounds and input preservation, plus wide-row samples.
+
+The main BENCH CSV now includes **88 source-level benchmark variants**
+under the full opt-in configuration. The extra kernels use
+size-aware input/output buffer handling, so expanding palette/RGB rows
+and shrinking 16bit/RGBA rows can be compared on identical test data
+without writing beyond the test buffers. Timing units depend on
+the selected timer; PS2 Linux defaults to wall-clock microseconds,
+not CPU cycles.
+
+**Performance status:** PSUBB on write filters and PSRLH/PSLLH/POR
+on aligned 16-bit swaps are genuine experimental EE MMI instructions.
+Indexed palette gather, bit-packed input and most Adam7 scatter
+operations are table/scalar C candidates (not claimed to be SIMD
+operations). All routes are intentionally **outside production
+pngwutil.c/pngrtran.c/Adam7 dispatch** until cross-compilation, EE
+execution and PNG end-to-end equivalence/benchmarking pass.
+The new additions do not modify PNG file parsing, CRC, interlace
+pass scheduling or zlib/DEFLATE.
+
+## One-trip EE correctness and benchmark lab (recommended)
+
+The preferred workflow is to **run one all-option ELF**, collect its
+console output once and analyze it on the development machine. The new
+`ps2/bench_filter_mmi.c` runs *after* the existing exhaustive
+correctness harness, validates each benchmark row against an independent
+scalar reference, then reports machine-readable `BENCH,` CSV lines.
+
+**Before going to PS2**, run GCC/Clang portable source-level tests,
+ASan/UBSan and the log-parser regression:
+
+```sh
+make -f ps2/Makefile.host test CC=gcc
+make -f ps2/Makefile.host clean
+make -f ps2/Makefile.host test CC=clang
+```
+
+**On a PS2SDK / bare EE setup**:
+
+```sh
+sh ps2/build_filter_variants.sh one
+```
+
+Run `ps2/variant-elfs/all-in-one.elf` on EE/PCSX2 and save the console
+output (stdout/stderr). That single ELF checks all read filters,
+the experimental PNG write Up/Sub4/Avg4/Paeth4 filters and RGBA palette
+expansion, then benchmarks every compiled read/write/palette kernel.
+To generate an additional baseline and **all 32 combinations** of the five
+prefix families plus seven additional strategy combinations, use:
+
+```sh
+sh ps2/build_filter_variants.sh all
+```
+
+It creates 41 ELFs including the all-in-one and baseline. These extra
+builds test interactions and serve as fallbacks; they are not required
+for the first complete all-option run.
+
+**On PS2 Linux userspace**, no PS2SDK is needed for the standalone test
+program if an R5900/EE-aware Linux compiler is available:
+
+```sh
+make -f ps2/Makefile.ee-linux \
+    EE_LINUX_CC=/path/to/your/ee-linux-gcc \
+    EE_LINUX_CFLAGS="-O2 -Wall -Wextra"
+```
+
+Copy and run `ps2/test_filter_mmi.ee-linux` on the PS2 Linux system,
+capturing its console output. Keep `PNG_PS2_BENCH_EE_PCCR` **disabled**
+for Linux userspace: programming EE performance-counter control registers
+may require privileged execution. The Linux build uses `gettimeofday` and records **wall-clock microseconds, not EE cycles**. Bare-metal PS2SDK builds without PCCR use
+`clock()` ticks, which may not be implemented by every SDK. If the chosen timer is unimplemented or returns all zeroes, do not
+interpret the CSV as a valid speed measurement.
+
+On a *privileged bare-metal EE* environment only, optionally request
+PCCR0 processor-cycle counts:
+
+```sh
+PNG_PS2_BENCH_USE_PCCR=1 sh ps2/build_filter_variants.sh one
+```
+
+This experimental PCCR mode has not been validated with every PS2SDK
+toolchain and must not be used in unprivileged Linux applications.
+
+**Process the captured log**:
+
+```sh
+python3 ps2/analyze_bench.py ps2-console.txt \
+    --csv ps2-bench-raw.csv --top 30
+```
+
+The analysis rejects missing/failed correctness and incomplete benchmark
+logs. It groups candidates by the same filter, bpp, row length and
+alignment. The one-ELF sweep includes 32, 64, 128, 256, 1024, 4096 and
+16384-byte rows and seven alignments. Per-case measurements include the
+scalar baseline, candidate time and copy-only cost; batches use the best
+of three repetitions to reduce scheduling noise. Copy subtraction can
+produce zero or noisy times on short rows, so compare repeated runs and
+end-to-end PNG loading too.
+
+**Up/Sub4 unrolled candidates from the separate optimization PR are
+included here as opt-ins.** Define `PNG_PS2_EE_MMI_UP_2X` to use the
+two-vector Up loop, or `PNG_PS2_EE_MMI_SUB4_UNROLL4` for a four-pixel
+Sub4 word loop when the Sub4 prefix candidate did not handle that row.
+The all-in-one benchmark directly times the unrolled functions and
+original packed Sub1/Sub2/Sub3/Sub4/Sub6/Sub8 and Average4 baselines
+via a separate benchmark-only source snapshot. No default is switched
+without actual EE speed and correctness evidence.
+
+**Additional independent kernels**: `extra_kernels_mmi.c` contains
+write-side Up, Sub4, Avg4 and Paeth4, plus table-based indexed-palette
+expansion to RGBA8 (separate-buffer and in-place). The standalone
+`test_extra_kernels.c` validates them on host and EE. These kernels
+are **not yet installed into production libpng's pngwutil.c/pngrtran.c
+dispatch**, so library-level end-to-end integration is still a separate
+step. The same applies to hardware proof for every experimental kernel.
+
+**Note:** `test_filter_mmi.elf` with no `PNG_PS2_BENCH_ENABLE` remains
+a short, correctness-only harness, as before.
 
 ## Testing on PS2
 
@@ -125,6 +375,92 @@ make -C ps2 EE_OPTFLAGS="-O2 -DPNG_PS2_EE_MMI_SUB4_PREFIX"
 
 The regular build covers Up, Sub4 and Average4; rebuilding with this
 flag also exercises QFSRV and the SA register save/restore sequence.
+
+## Experimental RGB8 Sub3 128-bit prefix scan
+
+Define `PNG_PS2_EE_MMI_SUB3_PREFIX` to opt into a 16-byte Sub3 reverse
+filter. The code reconstructs each aligned vector using QFSRV byte shifts
+of 3, 6 and 12 and PADDB, injecting the preceding three decoded bytes.
+It saves/restores SA, inserts separation between SA-dependent instructions,
+and uses scalar processing until 16-byte alignment and for the row tail.
+Rows shorter than 64 bytes continue using the existing packed implementation.
+The default Sub3 backend is unchanged.
+
+Host tests run the actual alignment and dispatch logic with a portable
+16-lane scan, comparing against an independent scalar reference for all
+lengths 0..1024 and all 16 row alignments. This does **not** execute the
+R5900 instructions or establish an EE speedup. Run the full EE filter
+harness with:
+
+```sh
+make -C ps2 clean
+make -C ps2 EE_OPTFLAGS="-O2 -DPNG_PS2_EE_MMI_SUB3_PREFIX"
+```
+
+Benchmark the opt-in path against the default packed RGB8 Sub3 kernel
+using real PNGs and cycles per decoded byte. MTSAB/QFSRV scheduling,
+SA state restoration, and cache behavior require EE hardware validation.
+
+## Grayscale Sub1/Sub2 16-byte prefix alternatives
+
+The default Sub1/Sub2 decoders continue to use the packed four-byte scan.
+Define `PNG_PS2_EE_MMI_GRAY_PREFIX16` to test a full 16-byte decoder:
+Sub1 uses QFSRV shifts by 1, 2, 4, and 8 bytes, and Sub2 uses shifts
+by 2, 4, and 8 bytes. Both inject the previous decoded one/two bytes,
+save and restore SA, process a scalar alignment prefix, and handle the
+remaining bytes without out-of-range LQ/SQ. The opt-in path is attempted
+only for rows of at least 64 bytes.
+
+The portable variant uses the production function's alignment and tail
+logic with a C simulation of the 128-bit scan. The full host target now
+runs both the original and 16-byte grayscale variants, just as it does
+for the RGB8 Sub3 candidate. Neither host execution nor syntax checks
+verify the assembly or its performance on R5900.
+
+## RGBA16 Sub8: three implementations to compare
+
+Sub8 handles RGBA16, where each pixel consists of eight encoded bytes.
+The default kernel still uses four-byte packed additions, splitting each
+pixel into two halves. Two new variants can be selected independently:
+
+- `PNG_PS2_EE_MMI_SUB8_WORDS`: for word-aligned rows with a complete
+  number of eight-byte pixels and at least 32 bytes, load two 32-bit words
+  per pixel directly and process two independent PADDB chains. All other
+  rows use the unchanged packed fallback.
+- `PNG_PS2_EE_MMI_SUB8_PREFIX16`: for rows of at least 64 bytes, align
+  the current position, load a 16-byte raw vector, inject the previous
+  decoded eight bytes, and perform one QFSRV(8) + PADDB prefix step.
+  It saves/restores SA and finishes partial vector tails bytewise.
+  No unaligned LQ, SQ, or LD is executed.
+
+If both options are enabled, PREFIX16 is attempted first. WORDS handles
+rows for which PREFIX16 declines, with the packed C/MMI implementation
+as the final fallback. This is intentional for multi-variant testing.
+
+The host regression suite now compiles the same production Sub8 source
+under **three binaries** (packed, WORDS, PREFIX16), each checked with
+the existing independent scalar Sub/Average/Paeth references and
+post-row canaries. The prefix and word paths are experimental; a
+source-level regression is not a real R5900 correctness or speed result.
+
+## Multi-variant EE correctness matrix
+
+Build **18 separate EE harness ELFs** with
+`sh ps2/build_filter_variants.sh`: all sixteen combinations of
+four prefix switches (Sub1/2, Sub3, Sub4 and Sub8), the separate
+Sub8 two-word candidate, and the stress combination enabling all
+prefixes, WORDS, Average and Paeth.
+
+The output `ps2/variant-elfs/` must be executed on real EE hardware or
+PCSX2, recording each variant's PASS count. Benchmark each filter
+individually in cycles/byte and compare whole-PNG decoding times.
+The 18 ELFs provide a correctness matrix, **not** a performance
+measurement: do not rank variants by host model throughput.
+
+On the host, `make -f ps2/Makefile.host test` runs the original and
+both portable-prefix sources for RGB8 and grayscale through the same
+0..1024-byte length and 16-alignment regressions. CI runs GCC, Clang,
+and sanitizer configurations for the same suite.
 
 ## RGB8 Sub3 and Average3 regression tests
 
@@ -262,47 +598,38 @@ configuration and the all-opt-in source configuration. The GCC-only
 `syntax-ee-gcc` target parses the actual inline-assembly operands in
 both configurations without assembling R5900 instructions.
 
-## PCSX2 screen-reporting ELFs
+## One-run automatic fastest-kernel selection (all PRs integrated)
 
-The EE harness displays progress per filter and mirrors diagnostics to stdout.
-Only after every byte comparison, previous-row preservation check and 16-byte
-post-row canary check passes does it display TEST: OK! code=0.
-A failure displays the filter, row length and alignment followed by
-TEST: FAIL! code=1. SleepThread() keeps the final screen visible.
-A stalled RUNNING line is not a passing result.
+**Build once, boot once, no runtime arguments:** after configuring PS2SDK,
+run `bash ps2/build-pcsx2.sh` and boot `build-ps2-mmi/auto-fastest.elf` in
+PCSX2 or on real EE hardware. For the PS2SDK Makefile, use
+`sh ps2/build_filter_variants.sh one` and boot `ps2/variant-elfs/all-in-one.elf`.
 
-Build both variants from the repository root in Linux/WSL:
+The default standalone ELF is **not** the old correctness-only `all` ELF:
+`PNG_PS2_BENCH_ENABLE` and all experimental comparison kernels are compiled
+into it. The run checks the very same output buffers used by its timing
+batches; it does **not** repeat the separate exhaustive filter loops.
+A full 0..1024, all-16-alignment verification remains available by setting
+`PNG_PS2_TEST_EXHAUSTIVE=1` at **build** time when the additional runtime
+is acceptable. The default quick run checks 18 lengths and 7 alignments,
+including short/truncated rows, and all kernels included in the sweep.
 
-    export PS2DEV=/usr/local/ps2dev
-    export PS2SDK=/mnt/c/Users/mugi/Documents/GitHub/PS2-OtherOS/build/modern-deps/ps2sdk
-    bash ps2/build-pcsx2.sh
+At completion, the ELF emits `FASTEST,...` entries comparing the **same
+filter, bpp, rowbytes and pointer alignment** (64, 1024 and 4096 bytes;
+aligned and 1-byte offset); `AUTO,...` is the on-screen readable summary
+for the 1024-byte aligned cases. A missing/low-resolution timer shows N/A,
+not a fictional speedup. Three repetitions are used for these representative
+widths, while corner-case lengths use one correctness+timetable batch.
 
-CC, PS2EE_CRT_DIR and the optional output-directory argument may override
-the compiler, SDK startup-object location and output directory.
+The extra `Up` alternatives are original 1x, original 2x, interleaved 2x
+loads, prefetch 1x, prefetch 2x, 4x, and prefetch 4x. These alternatives
+address the EE Core User Manual's load-use interlocks, independently
+schedulable loads and 128-bit SIMD pipeline. Since prefetch may worsen
+cache behavior, **only measured correctness-passing implementations**
+enter the winner table; it never claims a winner across unrelated filters.
 
-| ELF in build-ps2-mmi/ | Coverage |
-| --- | --- |
-| libpng_mmi_test_default.elf | 9 default filters, 147,600 cases |
-| libpng_mmi_test_all.elf | 19 filters, 311,600 cases; Sub4 prefix, gray/wide Average and Paeth opt-ins |
-
-Each filter covers lengths 0..1024 and all 16 row alignments, with deterministic
-random data and independent scalar expected results. Previous-row alignment
-is (row_offset * 7) & 15; this EE harness does not cover all 256 alignment
-pairs. The host Up test does cover all 256 pairs.
-
-Boot the default ELF with PCSX2's ELF boot action and your configured BIOS,
-wait for the final result, then boot the all-opt-in ELF separately. These tests
-run the production row-filter sources and actual R5900 assembly directly.
-They do not link the full libpng library or test dispatch through pngsimd.c,
-PNG parsing, zlib, Adam7 decoding, or complete image loading.
-
-Built locally on 2026-10-09 from origin/eemmi commit ebfd380bb plus this
-screen runner with GCC 15.1.0 and PS2SDK. Both cross-builds pass with
--Wall -Wextra -Werror. ELF inspection confirms ELF32 little endian,
-R5900/MIPS III flags, entry point 0x00101090, a load segment starting at
-0x00100000, and no undefined symbols. Disassembly includes PADDB and, in
-the all-opt-in build, QFSRV and the SA register save/restore instructions.
-All six existing host regression executables and portable syntax checks pass.
-The user ran the all-opt-in ELF in PCSX2 on 2026-10-09 and reported all 19 filters passing: 311,600 cases and TEST: OK! code=0. This includes the Sub4 prefix path. The default ELF has not been separately confirmed in PCSX2; real PS2 hardware remains unverified. PCSX2 and BIOS versions were not recorded.
-
-The reported all-opt-in ELF SHA-256 is edf3274dca8e861b9a67505848e9b7008b825a11ef1eb8edba9507528a9f5a49.
+The log parser `python3 ps2/analyze_bench.py capture.txt --csv result.csv`
+rejects `RESULT,A,X`, `RESULT,B,X`, `A: X`, `B: X`, missing `BENCH_DONE`, and
+incomplete FASTEST reports. No speed result is authoritative until the
+R5900 build and execution pass: host GCC/Clang tests are portable models,
+not EE assembly validation.

@@ -174,3 +174,5 @@ pngprefix.h
 /build-ps2-mmi/
 /ps2/*.o
 /ps2/*.elf
+__pycache__/
+*.pyc

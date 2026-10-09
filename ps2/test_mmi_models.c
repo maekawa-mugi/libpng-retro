@@ -62,6 +62,45 @@ sub4_prefix_model(unsigned char *row, size_t n)
       row[i] = (unsigned char)(row[i] + row[i - 4]);
 }
 
+/* Model of the packed four-pixel Sub4 loop.  Each decoded word becomes
+ * the left predictor for the next one; the final one carries between
+ * 16-byte groups.  This checks word boundaries and the 0..3 pixel tail.
+ * It does not execute R5900 PADDB or validate its scheduling.
+ */
+static void
+sub4_unrolled_model(unsigned char *row, size_t n)
+{
+   size_t i = 4, j, k;
+
+   if (n <= 4)
+      return;
+
+   if ((n & 3U) == 0)
+   {
+      size_t groups = (n - 4U) >> 4;
+      size_t blocks = ((n - 4U) & 15U) >> 2;
+
+      while (groups-- != 0)
+      {
+         for (j = 0; j < 4; ++j)
+            for (k = 0; k < 4; ++k)
+               row[i + 4*j + k] = (unsigned char)(
+                   row[i + 4*j + k] + row[i + 4*j + k - 4]);
+         i += 16;
+      }
+
+      while (blocks-- != 0)
+      {
+         for (k = 0; k < 4; ++k)
+            row[i + k] = (unsigned char)(row[i + k] + row[i + k - 4]);
+         i += 4;
+      }
+   }
+
+   for (; i < n; ++i)
+      row[i] = (unsigned char)(row[i] + row[i - 4]);
+}
+
 static void
 sub4_reference(unsigned char *row, size_t n)
 {
@@ -116,6 +155,25 @@ main(void)
          {
             printf("FAILED: Sub4 length=%lu run=%u\n", (unsigned long)n,
                 repetition);
+            return 1;
+         }
+         ++tests;
+      }
+
+   /* All lengths, including truncated rows that must use the scalar
+    * fallback, and every possible 0..3 pixel tail length. */
+   for (repetition = 0; repetition < 32; ++repetition)
+      for (n = 0; n <= TEST_MAX; ++n)
+      {
+         for (i = 0; i <= n; ++i)
+            original[i] = (unsigned char)random_u32();
+         memcpy(actual, original, n + 1);
+         sub4_reference(original, n);
+         sub4_unrolled_model(actual, n);
+         if (memcmp(original, actual, n + 1) != 0)
+         {
+            printf("FAILED: Sub4 unrolled length=%lu run=%u\n",
+                (unsigned long)n, repetition);
             return 1;
          }
          ++tests;

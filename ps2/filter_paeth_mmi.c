@@ -18,11 +18,25 @@ png_ps2_paeth_select(unsigned int a, unsigned int b, unsigned int c)
    int pa = png_ps2_paeth_abs((int)b - (int)c);
    int pb = png_ps2_paeth_abs((int)a - (int)c);
    int pc = png_ps2_paeth_abs((int)a + (int)b - 2 * (int)c);
+#ifdef PNG_PS2_EE_MMI_PAETH_MASK
+   /* Branch-free winner selection, preserving a > b > c tie priority.
+    * Compare on signed absolute differences before constructing masks. */
+   {
+      unsigned int choose_a = (unsigned int)(pa <= pb) &
+          (unsigned int)(pa <= pc);
+      unsigned int choose_b = (choose_a ^ 1U) &
+          (unsigned int)(pb <= pc);
+      unsigned int ma = 0U - choose_a;
+      unsigned int mb = 0U - choose_b;
+      return (a & ma) | (b & mb) | (c & ~(ma | mb));
+   }
+#else
    if (pa <= pb && pa <= pc)
       return a;
    if (pb <= pc)
       return b;
    return c;
+#endif
 }
 
 /* The register value uses only its low 'bpp' bytes (bpp is 3 or 4). */
