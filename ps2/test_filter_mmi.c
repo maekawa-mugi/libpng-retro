@@ -24,7 +24,8 @@ static void test_log(const char *format, ...)
    if (strncmp(message, "BENCH", 5) != 0 &&
        strncmp(message, "FUSED", 5) != 0 &&
        strncmp(message, "FASTEST", 7) != 0 &&
-       strncmp(message, "AUTO,", 5) != 0)
+       strncmp(message, "AUTO,", 5) != 0 &&
+       strncmp(message, "AUTO_", 5) != 0)
       scr_printf("%s", message);
    printf("%s", message);
    if (strncmp(message, "BENCH", 5) != 0 ||
@@ -473,8 +474,9 @@ test_live(const char *name, unsigned int index, unsigned int total,
 #endif
 
 /* Human-readable single-screen answer, in addition to machine-readable
- * FASTEST CSV. Only like-for-like contests with >=2 valid variants are
- * called winners. A missing timer precision is explicitly shown as N/A.
+ * FASTEST and AUTO_WIN CSV. Scalar is an eligible competitor, so a single
+ * valid MMI plan is sufficient to determine a shape-matched winner.
+ * Missing timer precision is N/A, never a declared speedup.
  * Representative row: 1024 bytes, aligned current/previous pointers. */
 #ifdef PNG_PS2_BENCH_ENABLE
 static void
@@ -496,39 +498,68 @@ ps2_show_fastest_panel(void)
       {"Paeth4", PS2_BENCH_PAETH, 4},
       {"Write Sub4", PS2_BENCH_WRITE_SUB4, 4}
    };
-   unsigned int i;
+   unsigned int i, scalar_wins = 0, plan_wins = 0, ties = 0, unknown = 0;
 #ifdef _EE
    scr_setfontcolor(0xffffffU);
-   scr_printf("AUTO FASTEST (1024 B / align 0; identical shape)\n");
+   scr_printf("AUTO WINNERS: 1024 B / align 0 (vs scalar)\n");
+   scr_printf("Best PLAN name shown even when SCALAR wins\n");
 #endif
-   printf("AUTO FASTEST (1024 B / align 0; identical shape)\n");
+   /* AUTO_HEADER is logged but not echoed a second time to the screen. */
+   printf("AUTO_HEADER,1024,0,scalar-versus-fastest-plan\n");
    for (i=0;i<sizeof targets/sizeof targets[0];++i)
    {
       const ps2_bench_winner *win =
          &ps2_bench_winners[targets[i].filter][targets[i].bpp][1][0];
-      unsigned long speedup= win->name && win->net_ticks ?
-          (unsigned long)(((unsigned long long)win->reference_ticks*1000ULL)/
-              win->net_ticks):0;
-      if (win->eligible < 2U)
+      enum ps2_bench_verdict verdict = win->name ?
+          ps2_bench_verdict(win->reference_ticks, win->net_ticks) :
+          PS2_BENCH_UNMEASURED;
+      unsigned long ratio = ps2_bench_winner_ratio_x1000(
+          win->reference_ticks, win->net_ticks);
+      char outcome[16];
+      if (verdict == PS2_BENCH_PLAN_WIN)
       {
-#ifdef _EE
-         scr_printf("%-11s N/A (valid measured competitors < 2)\n",
-             targets[i].label);
-#endif
-         printf("AUTO,%s,N/A,competitors=%u\n",targets[i].label,
-             win->eligible);
+         ++plan_wins;
+         snprintf(outcome, sizeof outcome, "PLAN %c WIN",
+             ps2_bench_plan_letter(win->plan_index));
+      }
+      else if (verdict == PS2_BENCH_SCALAR_WIN)
+      {
+         ++scalar_wins;
+         snprintf(outcome, sizeof outcome, "SCALAR WIN");
+      }
+      else if (verdict == PS2_BENCH_TIE)
+      {
+         ++ties;
+         snprintf(outcome, sizeof outcome, "TIE");
       }
       else
       {
-#ifdef _EE
-         scr_printf("%-11s %-25s %lu.%03lux\n",targets[i].label,
-             win->name,speedup/1000UL,speedup%1000UL);
-#endif
-         printf("AUTO,%s,%s,%lu.%03lux,competitors=%u\n",
-             targets[i].label,win->name,speedup/1000UL,
-             speedup%1000UL,win->eligible);
+         ++unknown;
+         snprintf(outcome, sizeof outcome, "N/A");
       }
+#ifdef _EE
+      scr_setfontcolor(verdict == PS2_BENCH_PLAN_WIN ? 0x00ff00U :
+          verdict == PS2_BENCH_SCALAR_WIN ? 0x00ffffU : 0xffffffU);
+      if (verdict == PS2_BENCH_UNMEASURED)
+         scr_printf("%-10.10s %-11.11s %-24.24s   --\n",
+             targets[i].label, outcome, win->name ? win->name : "-");
+      else
+         scr_printf("%-10.10s %-11.11s %-24.24s %lu.%03lux\n",
+             targets[i].label, outcome, win->name, ratio/1000UL,
+             ratio%1000UL);
+#endif
+      printf("AUTO,%s,%s,%s,%lu.%03lux,plan=%c,competitors=%u\n",
+          targets[i].label, outcome, win->name ? win->name : "-",
+          ratio/1000UL,ratio%1000UL,
+          ps2_bench_plan_letter(win->plan_index), win->eligible);
    }
+#ifdef _EE
+   scr_setfontcolor(0xffffffU);
+   scr_printf("WIN COUNT: PLAN %u | SCALAR %u | TIE %u | N/A %u\n",
+       plan_wins, scalar_wins, ties, unknown);
+#endif
+   printf("AUTO_TOTAL,plan=%u,scalar=%u,tie=%u,unknown=%u\n",
+       plan_wins, scalar_wins, ties, unknown);
 }
 #endif
 
@@ -557,7 +588,7 @@ main(void)
 #endif
 #ifdef PNG_PS2_BENCH_ENABLE
    printf("FASTEST winners are determined per filter, bpp, size and alignment\n");
-   printf("A = generic C / B = MMI candidates\n");
+   printf("A = generic C / B = all measured candidates (not winner totals)\n");
    printf("Matched kernel sweep; copy time subtracted\n");
    printf("O = tests passed / X = tests failed or incomplete\n\n");
    {
