@@ -1,5 +1,58 @@
 # PS2 Emotion Engine MMI backend
 
+## ee-mmi-test-spr: integrated MMI + 16 KiB SPR research ELF
+
+This branch is based on `ui/ps2-compact-two-page-results-20261009`
+(93 candidate plans, 71 filter/bpp groups) and integrates the newer
+single-screen 3-decimal display, no-wrap regression test and disabled
+GS cursor from `libpng18-ps2-ee-mmi`. The product PNG paths and
+production MMI dispatch are NOT changed by the SPR experiment.
+
+Build a single EE ELF with the new SPR tournament enabled by default:
+
+```sh
+bash ps2/build-pcsx2.sh
+# output: build-ps2-mmi/auto-fastest.elf
+# opt out of the SPR experiment:
+PNG_PS2_SPR_BENCH=0 bash ps2/build-pcsx2.sh
+```
+
+After all original fused verification, dispatch validation and production
+palette-hook checks PASS, the same ELF runs an independent SPR experiment.
+Up MMI/4x, Sub4, Avg4/dual, Paeth4, write Up/Avg4/Paeth4,
+palette RGBA/RGB/tRNS, Adam7 byte scatter at bpp2/4,
+indexed4 unpack, gray RGB/RGBA and swap16 are represented
+(up to 18 kernel families). Optional MMI variants respect existing flags.
+
+EE SPR is divided into four 4 KiB banks at 0x70000000, 0x70001000,
+0x70002000, and 0x70003000 for row output, previous row, replay
+source and small lookup tables. Exclusive SPR ownership is REQUIRED;
+there is no DMA or production dispatch change. Rows and guard bytes
+are checked against the identical optimized RAM candidate and an
+independent scalar reference before timing; previous rows must survive.
+
+SPR modes: `ram`, `spr_row`, `spr_aux`, `spr_both`, `spr_xfer`,
+and palette-only `spr_row_xfer_lut_hot` (LUT staged only once).
+Both read and write filter replays are included in the timing; results
+are **whole replay-batch ratios**, NOT isolated instruction throughput.
+`spr_xfer` includes RAM->SPR and SPR->RAM copies per kernel call.
+Six rotated samples with 16 calls per sample are measured.
+
+stdout records: SPR_META, SPR_HEADER, SPR_CASE, SPR_FAIL (if any),
+SPR_RESULT. The GS scoreboard remains a fixed 71-group grid with
+a row-23 SPR status and 512-width representative RAM/SPR ratios.
+The final TEST: OK! code=0 is required for successful capture.
+Zero timer samples are reported as TIMER_NA instead of artificial wins.
+
+```sh
+python3 ps2/analyze_bench.py ps2-console.txt --top 30
+python3 ps2/analyze_spr.py ps2-console.txt --csv spr-results.csv --top 40
+```
+
+Only real EE hardware can determine cache / SPR performance accurately.
+This branch has not yet been cross-compiled or run on PCSX2/real PS2.
+
+---
 ## EE MMI winner-first display (single screen)
 
 The **`auto-fastest.elf` scoreboard shows all 71 filter/bpp contests on
