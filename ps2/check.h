@@ -11,5 +11,8 @@
 #  endif
 #  define PNG_TARGET_CODE_IMPLEMENTATION "ps2/ee_init.c"
 #  define PNG_TARGET_IMPLEMENTS_FILTERS
+#  if defined(PNG_PS2_EE_MMI_PALETTE) && defined(PNG_READ_EXPAND_SUPPORTED)
+#    define PNG_TARGET_IMPLEMENTS_EXPAND_PALETTE
+#  endif
 #  define PNG_TARGET_ROW_ALIGNMENT 16
 #endif

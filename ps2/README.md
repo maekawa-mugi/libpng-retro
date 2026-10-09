@@ -598,6 +598,49 @@ configuration and the all-opt-in source configuration. The GCC-only
 `syntax-ee-gcc` target parses the actual inline-assembly operands in
 both configurations without assembling R5900 instructions.
 
+## One-boot dispatch and production palette-hook validation
+
+The single `auto-fastest.elf` additionally executes **`DISPATCH_PASS`**
+and **`PALETTE_HOOK_PASS`** after its already-integrated kernel
+correctness/benchmark sweep. Both are intentionally **small,
+nonduplicating integration checks**:
+
+- The measured winner table is used to select an actual function pointer
+  for each valid **64, 1024, or 4096 byte** row with precisely measured
+  current-row/previous-row alignment combinations **(0/0 and 1/7)**.
+  Only a validated plan that beat scalar can be selected; unknown,
+  invalid or unmeasured shapes fall back to the scalar reference.
+  `DISPATCH_PASS` means those selected callbacks, not merely candidate
+  names, produced exactly the scalar result with intact previous rows and
+  guard bytes. No additional full candidate search is performed.
+  This is a **training-and-verification lab policy**, not automatically
+  installed into production libpng and not a basis for interpolating other
+  row widths or pointer alignments.
+- The production `pngsimd.c` palette expansion hook can now be built
+  explicitly with `PNG_PS2_EE_MMI_PALETTE` (when target-specific PNG
+  read expansion is configured). It handles **8-bit palette rows**,
+  in-place RGB8 without tRNS and RGBA8 with tRNS, defaults alpha to
+  255 for indices outside the tRNS table, and updates every relevant
+  `png_row_info` field. Non-8bit indexed rows return unhandled and
+  are expanded by libpng's existing generic transform. The exact worker
+  source is shared by the production target and
+  `ps2/test_palette_hook.c`, which checks fallback, sentinels,
+  metadata, width and alignment. `test_palette_hook_host` runs it
+  on PC as well.
+
+The existing write-filter and other color-conversion candidate tests
+remain in the same ELF. Unlike palette expansion, production PNG writing
+has no equivalent simple target-specific expansion hook; these kernels
+are still **experimental**, not wired into `pngwutil.c`. A real PNG
+encode/decode round-trip and hardware measurements remain necessary
+before any write-kernel production registration.
+
+The final screen now also reports
+`DISPATCH: N passed, 0 failed (exact shapes)` and
+`PALETTE: 8-bit RGB/RGBA hook OK`.
+Neither implies that the optimal runtime dispatch is proven for
+arbitrary image sizes or that PNG-wide throughput improved.
+
 ## Production dispatch after PCSX2 comparison
 
 The standalone `auto-fastest.elf` benchmarks all Up/Paeth candidates, but
