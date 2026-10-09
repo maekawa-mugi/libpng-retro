@@ -20,8 +20,21 @@
 #define PS2_BENCH_WRITE_AVG4  6U
 #define PS2_BENCH_WRITE_PAETH 7U
 #define PS2_BENCH_PALETTE     8U
+#define PS2_BENCH_WRITE_SUB_ALL  9U
+#define PS2_BENCH_WRITE_AVG_ALL 10U
+#define PS2_BENCH_WRITE_PAE_ALL 11U
+#define PS2_BENCH_PAL_RGB       12U
+#define PS2_BENCH_PAL_TRNS      13U
+#define PS2_BENCH_SWAP16        14U
+#define PS2_BENCH_STRIP16       15U
+#define PS2_BENCH_RGB_SWAP      16U
+#define PS2_BENCH_RGBA_SWAP     17U
+#define PS2_BENCH_RGB_TO_RGBA   18U
+#define PS2_BENCH_RGBA_TO_RGB   19U
+#define PS2_BENCH_ADAM_BYTES    20U
+#define PS2_BENCH_ADAM_BITS     21U
 #define PS2_BENCH_ROW_MAX 16384U
-#define PS2_BENCH_CAP   (4U * PS2_BENCH_ROW_MAX + 64U)
+#define PS2_BENCH_CAP   (8U * PS2_BENCH_ROW_MAX + 64U)
 
 typedef void (*ps2_bench_fn)(png_row_info *, png_byte *, const png_byte *);
 typedef struct {
@@ -36,6 +49,8 @@ static png_byte ps2_bench_prev[PS2_BENCH_CAP];
 static png_byte ps2_bench_expect[PS2_BENCH_CAP];
 static png_byte ps2_bench_prev_save[PS2_BENCH_CAP];
 static png_byte ps2_bench_palette_table[1024];
+static png_byte ps2_bench_rgb_table[768], ps2_bench_alpha_table[256];
+static size_t ps2_bench_input_bytes, ps2_bench_output_bytes;
 static volatile unsigned int ps2_bench_sink;
 static unsigned int ps2_bench_bpp, ps2_bench_filter;
 
@@ -117,6 +132,134 @@ ps2_bench_paeth(unsigned int a, unsigned int b, unsigned int c)
    if (pa <= pb && pa <= pc) return a;
    if (pb <= pc) return b;
    return c;
+}
+
+/* Shape-aware memory bounds for shrinking/expanding in-place transforms.
+ * Existing read/write-filter rows are still measured in input bytes. */
+static void
+ps2_bench_shape(unsigned int filter, unsigned int bpp, size_t n,
+    size_t *input, size_t *output, size_t *previous)
+{
+   *input = n;
+   *output = n;
+   *previous = n;
+   switch (filter)
+   {
+      case PS2_BENCH_PALETTE: case PS2_BENCH_PAL_TRNS:
+      case PS2_BENCH_RGB_TO_RGBA:
+         *output = 4*n; break;
+      case PS2_BENCH_PAL_RGB:
+         *output = 3*n; break;
+      case PS2_BENCH_SWAP16:
+         *input = *output = 2*n; break;
+      case PS2_BENCH_STRIP16:
+         *input = 2*n; break;
+      case PS2_BENCH_RGB_SWAP:
+         *input = *output = 3*n; break;
+      case PS2_BENCH_RGBA_SWAP:
+         *input = *output = 4*n; break;
+      case PS2_BENCH_RGBA_TO_RGB:
+         *input = 4*n; *output = 3*n; break;
+      case PS2_BENCH_ADAM_BYTES:
+         *input = *output = n*bpp;
+         *previous = ((n+1)/2)*bpp;
+         break;
+      case PS2_BENCH_ADAM_BITS:
+         *input = *output = (n*bpp+7)/8;
+         *previous = (((n+1)/2)*bpp+7)/8;
+         break;
+      default: break;
+   }
+   if (filter==PS2_BENCH_RGB_TO_RGBA)
+      *input=3*n;
+}
+
+static void
+ps2_bench_write_sub_all(png_row_info *ri, png_byte *r,
+    const png_byte *p)
+{
+   png_ps2_write_filter_packed(r,p,ri->rowbytes,ps2_bench_bpp,0);
+}
+static void
+ps2_bench_write_avg_all(png_row_info *ri, png_byte *r,
+    const png_byte *p)
+{
+   png_ps2_write_filter_packed(r,p,ri->rowbytes,ps2_bench_bpp,1);
+}
+static void
+ps2_bench_write_pae_all(png_row_info *ri, png_byte *r,
+    const png_byte *p)
+{
+   png_ps2_write_filter_packed(r,p,ri->rowbytes,ps2_bench_bpp,2);
+}
+static void
+ps2_bench_palette_rgb(png_row_info *ri, png_byte *r,
+    const png_byte *p)
+{
+   (void)p;
+   png_ps2_expand_palette_rgb3(r,r,ri->rowbytes,ps2_bench_rgb_table);
+}
+static void
+ps2_bench_palette_trns(png_row_info *ri, png_byte *r,
+    const png_byte *p)
+{
+   (void)p;
+   png_ps2_expand_palette_rgba_trns(r,r,ri->rowbytes,
+       ps2_bench_rgb_table,ps2_bench_alpha_table);
+}
+static void
+ps2_bench_swap16(png_row_info *ri, png_byte *r,
+    const png_byte *p)
+{
+   (void)p;
+   png_ps2_swap16_mmi(r,ri->rowbytes);
+}
+static void
+ps2_bench_strip16(png_row_info *ri, png_byte *r,
+    const png_byte *p)
+{
+   (void)p;
+   png_ps2_strip16_high(r,r,ri->rowbytes);
+}
+static void
+ps2_bench_swap_rgb(png_row_info *ri, png_byte *r,
+    const png_byte *p)
+{
+   (void)p;
+   png_ps2_swap_rb(r,ri->rowbytes,3);
+}
+static void
+ps2_bench_swap_rgba(png_row_info *ri, png_byte *r,
+    const png_byte *p)
+{
+   (void)p;
+   png_ps2_swap_rb(r,ri->rowbytes,4);
+}
+static void
+ps2_bench_rgb_to_rgba(png_row_info *ri, png_byte *r,
+    const png_byte *p)
+{
+   (void)p;
+   png_ps2_rgb_to_rgba(r,r,ri->rowbytes,0x7f);
+}
+static void
+ps2_bench_rgba_to_rgb(png_row_info *ri, png_byte *r,
+    const png_byte *p)
+{
+   (void)p;
+   png_ps2_rgba_to_rgb(r,r,ri->rowbytes);
+}
+static void
+ps2_bench_adam_bytes(png_row_info *ri, png_byte *r,
+    const png_byte *p)
+{
+   png_ps2_adam7_scatter_bytes(r,p,ri->rowbytes,ps2_bench_bpp,4);
+}
+static void
+ps2_bench_adam_bits(png_row_info *ri, png_byte *r,
+    const png_byte *p)
+{
+   png_ps2_adam7_scatter_bits(r,p,ri->rowbytes,ps2_bench_bpp,4);
 }
 
 /* Independent scalar reference, reused for the baseline timing. */
