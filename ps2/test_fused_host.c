@@ -73,6 +73,11 @@ int main(void)
    }
    assert(png_ps2_bench_all() == 0);
    assert(ps2_bench_ab.completed && ps2_bench_ab.cases == 8U * 18U * 7U);
+   assert(ps2_bench_dispatch_passed != 0);
+   assert(ps2_bench_dispatch_failed == 0);
+   assert(ps2_bench_dispatch_select(PS2_BENCH_UP,1,257,
+       ps2_bench_row,ps2_bench_prev,PS2_BENCH_REFERENCE) ==
+       PS2_BENCH_REFERENCE);
    assert(updates == 8U * 20U);
    for (fault = 0; fault < 8; ++fault)
    {
