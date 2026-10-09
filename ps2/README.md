@@ -28,10 +28,16 @@ PS2DEV/PS2SDK values override these paths. GCC 15.2.0 successfully built:
   not the accumulated time across all 88 candidates or whole-PNG decoding.
   Representative autotuning shapes use three measurements per batch;
   other shapes use one. Zero timing does not change test status.
-  Nine candidates appear per page; progress switches pages as needed.
-  After completion, all ten result pages rotate every four seconds, each
-  retaining its own results and a green `END!`. `END!` marks termination;
-  `TEST: OK/FAIL` and each side's `O/X` indicate success or failure.
+  The compact 80-column EE screen now shows **51 candidates per page**
+  (three columns, 17 one-line rows per column). The 93-plan lab uses
+  **only two rotating pages**, with ten representative `PLAN X WIN` /
+  `SCALAR WIN` summaries pinned in five double-column rows on **both**
+  pages. Page switching happens every eight seconds after completion.
+  `A:O/B:O` is abbreviated to `AOB O` without spaces (`AOBO`),
+  while `X`, `~`, and `-` mean fail, running, and waiting. Full
+  candidate names, per-side timings, all alignment/width results and
+  individual error details remain in stdout CSV (not discarded).
+  The bottom line reports test, dispatch, and palette status on each page.
   The fused checks continue after a mismatch to finish each item's matrix
   and preserve distinct A/B results. All screen rendering is outside timing.
   CSV and per-item `RESULT` records go to stdout without drawing each log row.
@@ -56,6 +62,20 @@ To repeat host checks with a Windows Python installation, set the Makefile's
 `make -f ps2/Makefile.host test CC=gcc PYTHON=/c/path/to/python.exe`.
 
 ### Fast unified runtime
+
+The **results display now fits 51 candidates in one page** using a
+dense 3-column layout. With 93 candidates this means exactly **two
+pages**, not eleven. The winning plan/scalar verdicts are repeated at
+the top of each page in two columns (ten winners in five rows), so
+switching candidate pages never hides the answers. Candidate cells are
+`NN name AOB O` (without spaces between the two status pairs), e.g.
+`037 sub4-prefix-dir AOBO`; `A` is the scalar reference and `B`
+is the candidate. Long names are truncated **on screen only**, and
+`RESULT` / `BENCH` / `FASTEST` / `AUTO_WIN` CSV records retain all
+original values. The page rotation interval is eight seconds.
+`ps2/test_compact_layout_host.c` checks page capacity, layout bounds
+and distinct cell coordinates independently on GCC/Clang.
+
 
 The final EE screen now declares **SCALAR WIN**, **PLAN A WIN**,
 **PLAN B WIN** (or a later plan letter), **TIE**, or **N/A** beside each
