@@ -264,6 +264,9 @@ static void test_live(const char *, unsigned int, unsigned int,
  * png_row_info contract on EE, not just through microkernel adapters. */
 #include "palette_production.c"
 #include "test_palette_hook.c"
+#if defined(_EE) && defined(PNG_PS2_SPR_BENCH)
+#include "spr_bench.c"
+#endif
 #endif
 
 static int
@@ -706,6 +709,11 @@ main(void)
 #endif
    printf("libpng PS2 live correctness and benchmark lab\n");
    result = run_filters();
+#if defined(_EE) && defined(PNG_PS2_BENCH_ENABLE) && defined(PNG_PS2_SPR_BENCH)
+   /* Entire original regression/dispatch/palette gate must pass first. */
+   if (!result) result = png_ps2_spr_benchmark();
+   else printf("SPR_RESULT,SKIP,previous_correctness_failure\n");
+#endif
    printf("\nTEST: %s! code=%d\n", result ? "FAIL" : "OK", result);
 #ifdef PNG_PS2_BENCH_ENABLE
    if (!result) ps2_show_fastest_panel();
