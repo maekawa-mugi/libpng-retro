@@ -63,7 +63,7 @@ png_ps2_test_full(void)
    png_byte *orig=png_ps2_extra_align16(full_original);
    png_byte *save_prev=png_ps2_extra_align16(full_saved_prev);
    size_t i, n;
-   unsigned int stride, mode, off, rep, l, pass, bpp, depth;
+   unsigned int stride, mode, off, rep, l, pass, depth;
 
    /* Write Sub/Average/Paeth for EVERY supported byte stride. */
    for (rep=0;rep<2;++rep)
