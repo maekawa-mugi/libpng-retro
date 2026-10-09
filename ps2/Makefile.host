@@ -84,8 +84,6 @@ ps2/test_mmi_models: ps2/test_mmi_models.c
 # This is not a cross-assembly check; it catches C API / feature-flag errors.
 .PHONY: syntax syntax-ee-gcc
 syntax:
-	$(CC) $(CFLAGS) -Wno-unused-function -DPNG_PS2_EE_MMI_UP_SCHEDULES -DPNG_PS2_EE_MMI_AVG4_DUAL -DPNG_PS2_EE_MMI_PAETH -fsyntax-only ps2/test_spr_syntax.c
-	$(CC) $(CFLAGS) -Wno-unused-function -fsyntax-only ps2/test_spr_syntax.c
 	$(CC) $(CFLAGS) -Wno-unused-function -DPNG_PS2_SYNTAX_PORTABLE -fsyntax-only ps2/test_ee_syntax.c
 	$(CC) $(CFLAGS) -Wno-unused-function -DPNG_PS2_SYNTAX_PORTABLE -DPNG_PS2_SYNTAX_DEFAULT -fsyntax-only ps2/test_ee_syntax.c
 
@@ -124,7 +122,6 @@ test: ps2/test_up_host ps2/test_up_schedules_host ps2/test_up_2x_host ps2/test_g
 	./ps2/test_ab_summary_host
 	./ps2/test_fused_host
 	$(PYTHON) -m unittest discover -s ps2 -p test_analyze_bench.py
-	$(PYTHON) -m unittest discover -s ps2 -p test_analyze_spr.py
 	sh -n ps2/build_filter_variants.sh
 
 clean:

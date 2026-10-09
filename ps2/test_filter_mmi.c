@@ -264,9 +264,6 @@ static void test_live(const char *, unsigned int, unsigned int,
  * png_row_info contract on EE, not just through microkernel adapters. */
 #include "palette_production.c"
 #include "test_palette_hook.c"
-#if defined(_EE) && defined(PNG_PS2_SPR_BENCH)
-#include "spr_bench.c"
-#endif
 #endif
 
 static int
@@ -628,17 +625,6 @@ screen_finish(int failed)
    scr_printf("DONE: %s | %u PLANS | %u GROUPS",
        failed?"FAIL":"PASS",(unsigned int)PS2_SCREEN_VARIANTS,
        screen_groups);
-#ifdef PNG_PS2_SPR_BENCH
-   scr_setXY(0,23);
-   scr_setfontcolor(png_spr_completed?0x00ff00U:0x0000ffU);
-   if(png_spr_completed)
-      scr_printf("SPR PASS %u cases NA:%u | Up:%u.%02ux Pal:%u.%02ux Adam:%u.%02ux",
-          png_spr_cases_done,png_spr_timer_na,
-          png_spr_ratio_x100[0]/100U,png_spr_ratio_x100[0]%100U,
-          png_spr_ratio_x100[1]/100U,png_spr_ratio_x100[1]%100U,
-          png_spr_ratio_x100[2]/100U,png_spr_ratio_x100[2]%100U);
-   else scr_printf("SPR FAILED/SKIPPED - see SPR_FAIL or SPR_RESULT stdout");
-#endif
 }
 
 static void
@@ -720,11 +706,6 @@ main(void)
 #endif
    printf("libpng PS2 live correctness and benchmark lab\n");
    result = run_filters();
-#if defined(_EE) && defined(PNG_PS2_BENCH_ENABLE) && defined(PNG_PS2_SPR_BENCH)
-   /* Entire original regression/dispatch/palette gate must pass first. */
-   if (!result) result = png_ps2_spr_benchmark();
-   else printf("SPR_RESULT,SKIP,previous_correctness_failure\n");
-#endif
    printf("\nTEST: %s! code=%d\n", result ? "FAIL" : "OK", result);
 #ifdef PNG_PS2_BENCH_ENABLE
    if (!result) ps2_show_fastest_panel();
