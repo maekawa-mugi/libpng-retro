@@ -9,6 +9,7 @@ class BenchLogTests(unittest.TestCase):
         self.valid = [
             "PASS: 311600 PS2 EE MMI filter cases",
             "EXTRA_PASS,write=131200,palette=32800",
+            "FULL_PASS,write=100,palette=200,convert=300,adam7=400",
             "BENCH_INFO,unit=clock_ticks,clock_per_sec=1000000,repeats=3",
             "BENCH_HEADER,variant,filter,bpp,rowbytes,row_align,prev_align,"
             "loops,copy_ticks,scalar_ticks,optimized_ticks,"
@@ -25,8 +26,9 @@ class BenchLogTests(unittest.TestCase):
         self.assertEqual(timer, "clock_ticks")
         self.assertEqual(statuses["correctness_pass_lines"], 1)
         self.assertEqual(statuses["extra_pass_lines"], 1)
+        self.assertEqual(statuses["full_pass_lines"], 1)
         self.assertEqual(statuses["benchmark_runs_completed"], 1)
-        self.assertEqual(length, 7)
+        self.assertEqual(length, 8)
         self.assertEqual(rows[0].speedup, 2.0)
         self.assertEqual(rows[1].speedup, 2.5)
         self.assertEqual(analyze(self.valid, top=0)[0], 0)
