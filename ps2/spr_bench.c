@@ -83,12 +83,19 @@ static const char *const png_spr_modes[PNG_SPR_PALETTE_STAGING] = {
    "spr_row_xfer_lut_hot"
 };
 
-static png_byte png_spr_input[PNG_SPR_SLOT+PNG_SPR_GUARD];
-static png_byte png_spr_output[PNG_SPR_SLOT+PNG_SPR_GUARD];
-static png_byte png_spr_previous[PNG_SPR_SLOT+PNG_SPR_GUARD];
-static png_byte png_spr_expected[PNG_SPR_SLOT+PNG_SPR_GUARD];
-static png_byte png_spr_prev_saved[PNG_SPR_SLOT+PNG_SPR_GUARD];
+static png_byte png_spr_input[PNG_SPR_SLOT+PNG_SPR_GUARD]
+   __attribute__((aligned(16)));
+static png_byte png_spr_output[PNG_SPR_SLOT+PNG_SPR_GUARD]
+   __attribute__((aligned(16)));
+static png_byte png_spr_previous[PNG_SPR_SLOT+PNG_SPR_GUARD]
+   __attribute__((aligned(16)));
+static png_byte png_spr_expected[PNG_SPR_SLOT+PNG_SPR_GUARD]
+   __attribute__((aligned(16)));
+static png_byte png_spr_prev_saved[PNG_SPR_SLOT+PNG_SPR_GUARD]
+   __attribute__((aligned(16)));
 static volatile unsigned int png_spr_sink;
+static unsigned int png_spr_completed, png_spr_cases_done, png_spr_timer_na;
+static unsigned int png_spr_ratio_x100[3];
 
 static unsigned long
 png_spr_median6(const unsigned long values[PNG_SPR_SAMPLES])
@@ -351,10 +358,22 @@ png_ps2_spr_benchmark(void)
                 t->name,(unsigned long)n,png_spr_modes[m],
                 med[m],speed,successful?"MEASURED":"TIMER_NA");
          }
+         if(n==512U && successful)
+         {
+            unsigned int slot=t->kind==PS2_BENCH_UP?0U:
+                t->kind==PS2_BENCH_PALETTE?1U:
+                t->kind==PS2_BENCH_ADAM_BYTES && t->bpp==4U?2U:3U;
+            if(slot<3U && med[3U]>0U)
+                png_spr_ratio_x100[slot]=(unsigned int)(
+                    (unsigned long long)med[0U]*100ULL/med[3U]);
+         }
          ++cases;
       }
    }
    ps2_bench_clock_done();
+   png_spr_completed=1U;
+   png_spr_cases_done=cases;
+   png_spr_timer_na=unmeasured;
    printf("SPR_RESULT,PASS,cases=%u,timer_na=%u,sink=%u\n",
        cases,unmeasured,(unsigned int)png_spr_sink);
    fflush(stdout);
