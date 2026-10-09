@@ -41,16 +41,13 @@ PS2DEV/PS2SDK values override these paths. GCC 15.2.0 successfully built:
 
 - `build-ps2-mmi/all-pr/all-in-one.elf`: every experimental option, the
   unified sampled correctness checks and the 88-variant benchmark lab. Diagnostics
-  go to both the PS2 screen and stdout; `TEST: OK! code=0` appears only after
-  the fused sweep finishes. The final screen remains visible.
-  The screen follows `openssl-retro/test/ps2/main.c`: each candidate has
-  its own A (generic C) and B (MMI candidate) columns, changing from white
-  `WAIT` to yellow `RUNNING` to green `O (N ms)` or red `X (N ms)`.
-  A validates the scalar reference's bounds and previous-row preservation;
-  B validates output equivalence and previous-row preservation. A reference
-  validation failure also invalidates the corresponding B comparison.
-  Timing is this candidate's matched workload, copy overhead subtracted,
-  not the accumulated time across all 88 candidates or whole-PNG decoding.
+  go exclusively to stdout; the PS2 display uses fixed coordinates
+  for a **live winner table** with no log-induced scrolling or wrapping.
+  `TEST: OK! code=0` appears in stdout after the fused sweep finishes.
+  The screen shows `DONE: PASS/FAIL` once all correctness validation is done.
+  Both A (generic C) and B (candidate) remain independently verified and
+  their full per-item status/timing stays in CSV. Reported net kernel time
+  subtracts replay-copy overhead; it is not whole-PNG throughput.
   Representative autotuning shapes use three measurements per batch;
   other shapes use one. Zero timing does not change test status.
   The current winner-first screen has 71 contests in one fixed table,
@@ -88,10 +85,11 @@ A/B checks still run but no longer crowd the screen. Final **DONE: PASS**
 is unambiguous. See the winner-first display section above.
 
 
-The final EE screen now declares **SCALAR WIN**, **PLAN A WIN**,
-**PLAN B WIN** (or a later plan letter), **TIE**, or **N/A** beside each
-representative filter. Plan letters identify implementation candidates in
-their *individual filter/bpp family*, in fixed benchmark declaration order:
+The stdout `AUTO` CSV retains **SCALAR WIN**, **PLAN A WIN**,
+**PLAN B WIN** (or a later letter), **TIE**, and **N/A** beside
+representative filters. The **PS2 screen uses the shorter numeric format**,
+with group ID and global plan ID described at the top of this README.
+Each `PLAN_MAP` record identifies the actual kernel name:
 
 - `PLAN E WIN  up-4x  41.241x` means that Up's plan E beat the scalar
   reference in the same 1024-byte, aligned-row shape. The named source is
@@ -102,7 +100,8 @@ their *individual filter/bpp family*, in fixed benchmark declaration order:
   a winner. **One valid plan is enough** to compare against scalar; requiring
   two MMI plans would wrongly hide single-plan results.
 
-The final `WIN COUNT` counts only the representative rows shown on screen.
+The one-screen footer counts all 71 filter/bpp contests, and `AUTO_TOTAL`
+still counts the ten representative CSV summary cases.
 `AUTO_WIN,...` CSV logs the result for *every* valid 64/1024/4096-byte,
 alignment-0/1 group with source name, stable plan letter, net timing, and
 ratio. `AUTO_TOTAL,...` sums representative-screen verdicts. The existing
@@ -666,9 +665,8 @@ are still **experimental**, not wired into `pngwutil.c`. A real PNG
 encode/decode round-trip and hardware measurements remain necessary
 before any write-kernel production registration.
 
-The final screen now also reports
-`DISPATCH: N passed, 0 failed (exact shapes)` and
-`PALETTE: 8-bit RGB/RGBA hook OK`.
+The compact footer reports the final dispatch and palette validation
+status on the same one-screen scoreboard, with `DONE: PASS/FAIL`.
 Neither implies that the optimal runtime dispatch is proven for
 arbitrary image sizes or that PNG-wide throughput improved.
 
@@ -723,7 +721,7 @@ including short/truncated rows, and all kernels included in the sweep.
 
 At completion, the ELF emits `FASTEST,...` entries comparing the **same
 filter, bpp, rowbytes and pointer alignment** (64, 1024 and 4096 bytes;
-aligned and 1-byte offset); `AUTO,...` is the on-screen readable summary
+aligned and 1-byte offset); `AUTO,...` is the stdout readable summary
 for the 1024-byte aligned cases. A missing/low-resolution timer shows N/A,
 not a fictional speedup. Three paired, order-alternated repetitions are used for these representative
 widths, with the median net cost reported; corner-case lengths retain one
