@@ -545,16 +545,16 @@ screen_cell(unsigned int g)
       if (ratio>=1000000UL)
          snprintf(t,sizeof t,"%02u:%02u WIN >999x",g+1U,id);
       else
-         snprintf(t,sizeof t,"%02u:%02u WIN %lu.%01lux",
-             g+1U,id,ratio/1000UL,(ratio%1000UL)/100UL);
+         snprintf(t,sizeof t,"%02u:%02u WIN %lu.%03lux",
+             g+1U,id,ratio/1000UL,ratio%1000UL);
    }
    else if (verdict==PS2_BENCH_SCALAR_WIN)
    {
       if (ratio>=1000000UL)
          snprintf(t,sizeof t,"%02u:S WIN >999x",g+1U);
       else
-         snprintf(t,sizeof t,"%02u:S WIN %lu.%01lux",
-             g+1U,ratio/1000UL,(ratio%1000UL)/100UL);
+         snprintf(t,sizeof t,"%02u:S WIN %lu.%03lux",
+             g+1U,ratio/1000UL,ratio%1000UL);
    }
    else if (verdict==PS2_BENCH_TIE)
       snprintf(t,sizeof t,"%02u:= TIE",g+1U);
@@ -701,6 +701,8 @@ main(void)
    setvbuf(stdout, output_buffer, _IOFBF, sizeof output_buffer);
 #ifdef _EE
    init_scr();
+   /* No white cursor blocks between tightly packed result cells. */
+   scr_setCursor(0);
 #endif
    printf("libpng PS2 live correctness and benchmark lab\n");
    result = run_filters();
