@@ -1091,11 +1091,13 @@ ps2_bench_validate_dispatch(void)
                       (unsigned long)n,align,win->name);
                }
             }
-   ps2_bench_dispatch_passed=cases-fails;
+   /* Some selector-policy invariants do not execute a measured row.
+    * Keep their failures separate to avoid unsigned underflow in counts. */
+   ps2_bench_dispatch_passed=cases >= fails ? cases-fails : 0U;
    ps2_bench_dispatch_failed=fails;
    printf("DISPATCH_%s,cases=%u,passed=%u,failed=%u,"
        "policy=exact-shape-scalar-fallback\n",
-       fails?"FAIL":"PASS",cases,cases-fails,fails);
+       fails?"FAIL":"PASS",cases,ps2_bench_dispatch_passed,fails);
    return fails ? 1 : 0;
 }
 
