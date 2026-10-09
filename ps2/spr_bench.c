@@ -122,9 +122,6 @@ png_spr_seed(unsigned int c, unsigned int width,
 static void
 png_spr_load_lut(void)
 {
-   volatile png_byte *const lut=(volatile png_byte *)(uintptr_t)0x70003000U;
-   /* MMIO-like volatile is unnecessary; memcpy is valid for EE SPR. */
-   (void)lut;
    memcpy((void *)(uintptr_t)0x70003000U,
        ps2_bench_palette_table,1024U);
 }
@@ -257,7 +254,6 @@ png_ps2_spr_benchmark(void)
    unsigned long timings[PNG_SPR_PALETTE_STAGING][PNG_SPR_SAMPLES];
    unsigned long med[PNG_SPR_PALETTE_STAGING];
    unsigned int c,w,m,s,step,methods,cases=0U,unmeasured=0U;
-   png_byte *const sr=(png_byte *)(uintptr_t)0x70000000U;
    int okay;
    ps2_bench_clock_init();
    printf("SPR_META,EE_MMI,16KiB,mode=RAM_ROW_AUX_BOTH_XFER,"
@@ -311,7 +307,6 @@ png_ps2_spr_benchmark(void)
          for(m=0;m<methods;++m)
          {
             if(!t->aux && (m==2U || m==3U)) continue;
-            if(!t->aux && m==4U) { /* still measures row ingress/egress */ }
             (void)png_spr_run(t,n,inbytes,outbytes,prevbytes,m,1U,&okay);
             if(!okay)
             {
@@ -339,7 +334,7 @@ png_ps2_spr_benchmark(void)
             }
          for(m=0;m<methods;++m)
          {
-            double speed=0.;
+            
             if(!t->aux && (m==2U || m==3U))continue;
             med[m]=png_spr_median6(timings[m]);
             if(m==0 && med[m]==0U)successful=0U;
@@ -365,7 +360,6 @@ png_ps2_spr_benchmark(void)
    fflush(stdout);
    /* The main 71-group scoreboard and DONE footer are left untouched.
     * Complete machine-readable SPR_CASE rows are always on stdout. */
-   (void)sr;
    return 0;
 }
 #endif /* PNG_PS2_SPR_BENCH_C */
