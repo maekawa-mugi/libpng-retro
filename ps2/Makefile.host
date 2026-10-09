@@ -84,6 +84,7 @@ syntax:
 
 # GCC parses the inline assembly constraints but still does NOT assemble it.
 syntax-ee-gcc:
+	gcc $(CFLAGS) -Wno-unused-function -DPNG_PS2_TEST_PALETTE_DISPATCH -fsyntax-only ps2/test_dispatch_syntax.c
 	gcc $(CFLAGS) -Wno-unused-function -DPNG_PS2_EE_MMI_UP_4X -DPNG_PS2_EE_MMI_PAETH -fsyntax-only ps2/test_dispatch_syntax.c
 	gcc $(CFLAGS) -Wno-unused-function -DPNG_PS2_EE_MMI_UP_4X -DPNG_PS2_EE_MMI_PAETH -DPNG_PS2_EE_MMI_PAETH4_FORCE -fsyntax-only ps2/test_dispatch_syntax.c
 	gcc $(CFLAGS) -Wno-unused-function -DPNG_PS2_EE_MMI_UP_2X -fsyntax-only ps2/test_dispatch_syntax.c
