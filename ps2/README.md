@@ -60,6 +60,55 @@ Adam7 passes.  The default Sub4 loop is horizontal and intentionally
 uses only the low four byte lanes of PADDB; an optimized full-width
 prefix-sum implementation could replace it after profiling.
 
+## Extended kernel coverage for fewer PS2 test cycles
+
+The extended opt-in **standalone kernel lab** adds the PNG operations not
+covered by the initial 16-byte read-filter experiments:
+
+- Forward PNG Sub, Average and Paeth for **every common encoded byte
+  stride: 1, 2, 3, 4, 6 and 8**. Each preserves original left bytes
+  during backward processing; four consecutive byte residuals are
+  subtracted using EE `PSUBB` when the portable host model is disabled.
+- Palette index -> **RGB8**, and index -> **RGBA8 with the complete
+  256-entry tRNS alpha table**, in-place or disjoint.
+- 16-bit PNG byte-swap (aligned 16-byte `PSRLH/PSLLH/POR` kernel
+  with scalar alignment/tail), 16->8 high-byte reduction,
+  RGB/RGBA red-blue channel swap at **8-bit and 16-bit** depths,
+  RGB8->RGBA8, RGBA8->RGB8, and RGBA8->ARGB8.
+- PNG packed **1/2/4-bit** palette-index and grayscale sample unpacking
+  to 8 bits with exact grayscale scaling, Gray8->RGB8 and
+  Gray8->RGBA8 with gray tRNS, plus RGB8 tRNS->RGBA8.
+- Adam7 horizontal pass row-scatter for byte-aligned 1/2/3/4/6/8-byte
+  pixels and MSB-first packed 1/2/4-bit pixels across **all 7 passes**.
+  Vertical pass scheduling remains the responsibility of libpng.
+
+`extra_full_kernels.c` and `extra_color_kernels.c` contain the kernels.
+`test_full_kernels.c` and `test_color_kernels.c` run a shared
+host-and-EE correctness matrix against independent references. The
+one-trip harness requires `PASS`, `EXTRA_PASS`, `FULL_PASS`,
+`COLOR_PASS`, and `BENCH_DONE` before the analyzer accepts a log.
+Failure output is tagged with `FULL_FAIL`, `COLOR_FAIL`, or
+`BENCH_FAIL`. Tests check small/truncated rows, 16 pointer offsets,
+output bounds and input preservation, plus wide-row samples.
+
+The main BENCH CSV now includes **88 source-level benchmark variants**
+under the full opt-in configuration. The extra kernels use
+size-aware input/output buffer handling, so expanding palette/RGB rows
+and shrinking 16bit/RGBA rows can be compared on identical test data
+without writing beyond the test buffers. Timing units depend on
+the selected timer; PS2 Linux defaults to wall-clock microseconds,
+not CPU cycles.
+
+**Performance status:** PSUBB on write filters and PSRLH/PSLLH/POR
+on aligned 16-bit swaps are genuine experimental EE MMI instructions.
+Indexed palette gather, bit-packed input and most Adam7 scatter
+operations are table/scalar C candidates (not claimed to be SIMD
+operations). All routes are intentionally **outside production
+pngwutil.c/pngrtran.c/Adam7 dispatch** until cross-compilation, EE
+execution and PNG end-to-end equivalence/benchmarking pass.
+The new additions do not modify PNG file parsing, CRC, interlace
+pass scheduling or zlib/DEFLATE.
+
 ## One-trip EE correctness and benchmark lab (recommended)
 
 The preferred workflow is to **run one all-option ELF**, collect its
